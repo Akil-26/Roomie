@@ -215,6 +215,8 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -223,6 +225,9 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       backgroundColor: colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + screenHeight * 0.02,
+          ),
           child: ConstrainedBox(
             constraints: BoxConstraints(
               minHeight:
@@ -237,11 +242,11 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                   Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.only(
-                          top: 20,
-                          left: 50,
-                          right: 8,
-                          bottom: 8,
+                        padding: EdgeInsets.only(
+                          top: screenHeight * 0.025,
+                          left: screenWidth * 0.125,
+                          right: screenWidth * 0.02,
+                          bottom: screenHeight * 0.01,
                         ),
                         child: Row(
                           children: [
@@ -256,15 +261,15 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 48),
+                            SizedBox(width: screenWidth * 0.12),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: screenHeight * 0.01),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                          vertical: screenHeight * 0.015,
                         ),
                         child: Row(
                           children: [
@@ -278,10 +283,11 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                                 decoration: InputDecoration(
                                   hintText: 'Phone number',
                                   filled: true,
-                                  fillColor: colorScheme.surfaceContainerHighest,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 18,
-                                    horizontal: 16,
+                                  fillColor:
+                                      colorScheme.surfaceContainerHighest,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    vertical: screenHeight * 0.022,
+                                    horizontal: screenWidth * 0.04,
                                   ),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
@@ -309,27 +315,27 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
                         child: SizedBox(
                           width: double.infinity,
-                          height: 48,
                           child: ElevatedButton(
                             onPressed: _loading ? null : _sendOTP,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: colorScheme.primary,
                               foregroundColor: colorScheme.onPrimary,
+                              minimumSize: Size.fromHeight(screenHeight * 0.065),
+                              padding: EdgeInsets.symmetric(vertical: screenHeight * 0.017),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(32),
                               ),
                               elevation: 1,
-                shadowColor:
-                  colorScheme.primary.withValues(alpha: 0.25),
+                              shadowColor: colorScheme.primary.withValues(
+                                alpha: 0.25,
+                              ),
                             ),
                             child:
                                 _loading
-                                    ? const RoomieLoadingSmall(size: 24)
+                                    ? RoomieLoadingSmall(size: screenWidth * 0.06)
                                     : Text(
                                       'Sign up with Phone',
                                       style: textTheme.titleMedium?.copyWith(
@@ -337,14 +343,16 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                                         color: colorScheme.onPrimary,
                                         letterSpacing: 0.015,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                           ),
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                          vertical: screenHeight * 0.01,
                         ),
                         child: Text(
                           'Or continue with Google',
@@ -355,19 +363,18 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                          vertical: screenHeight * 0.015,
                         ),
                         child: SizedBox(
                           width: double.infinity,
-                          height: 48,
                           child: ElevatedButton.icon(
                             onPressed: _loading ? null : _continueWithGoogle,
                             icon: Icon(
                               Icons.g_mobiledata,
                               color: colorScheme.onSecondary,
-                              size: 28,
+                              size: screenWidth * 0.06,
                             ),
                             label: Text(
                               'Continue with Google',
@@ -376,16 +383,21 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                                 color: colorScheme.onSecondary,
                                 letterSpacing: 0.015,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: colorScheme.secondary,
                               foregroundColor: colorScheme.onSecondary,
+                              minimumSize: Size.fromHeight(screenHeight * 0.065),
+                              padding: EdgeInsets.symmetric(vertical: screenHeight * 0.017),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(32),
                               ),
-                elevation: 2,
-                shadowColor:
-                  colorScheme.secondary.withValues(alpha: 0.25),
+                              elevation: 2,
+                              shadowColor: colorScheme.secondary.withValues(
+                                alpha: 0.25,
+                              ),
                             ),
                           ),
                         ),
@@ -395,9 +407,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                   Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
                         child: Text(
                           'By continuing, you agree to our Terms of Service and Privacy Policy',
                           textAlign: TextAlign.center,
@@ -406,7 +416,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      SizedBox(height: screenHeight * 0.025),
                     ],
                   ),
                 ],

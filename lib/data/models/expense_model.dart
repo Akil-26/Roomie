@@ -65,7 +65,10 @@ class ExpenseModel {
       ),
       paymentStatus: Map<String, bool>.from(data['paymentStatus'] ?? {}),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
-      dueDate: data['dueDate'] != null ? (data['dueDate'] as Timestamp).toDate() : null,
+      dueDate:
+          data['dueDate'] != null
+              ? (data['dueDate'] as Timestamp).toDate()
+              : null,
       receiptUrl: data['receiptUrl'],
       metadata: data['metadata'],
     );

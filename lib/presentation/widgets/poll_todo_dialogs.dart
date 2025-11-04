@@ -1,4 +1,4 @@
-// ignore_for_file: unnecessary_import
+// ignore_for_file: unnecessary_import, unused_local_variable
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -48,7 +48,7 @@ class _CreatePollDialogState extends State<CreatePollDialog> {
 
   void _createPoll() {
     if (_isCreating) return;
-    
+
     try {
       setState(() {
         _isCreating = true;
@@ -60,10 +60,11 @@ class _CreatePollDialogState extends State<CreatePollDialog> {
         return;
       }
 
-      final options = _optionControllers
-          .map((controller) => controller.text.trim())
-          .where((text) => text.isNotEmpty)
-          .toList();
+      final options =
+          _optionControllers
+              .map((controller) => controller.text.trim())
+              .where((text) => text.isNotEmpty)
+              .toList();
 
       if (options.length < 2) {
         _showError('Please enter at least 2 options');
@@ -72,14 +73,15 @@ class _CreatePollDialogState extends State<CreatePollDialog> {
 
       final pollData = PollData(
         question: question,
-        options: options
-            .asMap()
-            .entries
-            .map((entry) => PollOption(
-                  id: 'option_${entry.key}',
-                  title: entry.value,
-                ))
-            .toList(),
+        options:
+            options
+                .asMap()
+                .entries
+                .map(
+                  (entry) =>
+                      PollOption(id: 'option_${entry.key}', title: entry.value),
+                )
+                .toList(),
         allowMultiple: _allowMultiple,
         createdAt: DateTime.now(),
       );
@@ -111,73 +113,77 @@ class _CreatePollDialogState extends State<CreatePollDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+      insetPadding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 40,
+        bottom: 0,
       ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        padding: const EdgeInsets.all(24),
-        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Icon(
-                  Icons.poll,
-                  color: colorScheme.primary,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Create Poll',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+        padding: const EdgeInsets.all(20),
+        constraints: const BoxConstraints(
+          maxWidth: 400,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Icon(Icons.poll, color: colorScheme.primary, size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Create Poll',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // Question input
-            TextField(
-              controller: _questionController,
-              decoration: InputDecoration(
-                labelText: 'Poll Question',
-                hintText: 'What would you like to ask?',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                prefixIcon: const Icon(Icons.help_outline),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
               ),
-              maxLines: 2,
-              textCapitalization: TextCapitalization.sentences,
-            ),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-            // Options
-            Text(
-              'Options',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              // Question input
+              TextField(
+                controller: _questionController,
+                decoration: InputDecoration(
+                  labelText: 'Poll Question',
+                  hintText: 'What would you like to ask?',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  prefixIcon: const Icon(Icons.help_outline),
+                ),
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
               ),
-            ),
-            const SizedBox(height: 12),
 
-            SizedBox(
-              height: 220,
-              child: ListView.builder(
+              const SizedBox(height: 20),
+
+              // Options
+              Text(
+                'Options',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Options list - no fixed height
+              ListView.builder(
                 shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
                 itemCount: _optionControllers.length,
                 itemBuilder: (context, index) {
                   return Container(
@@ -193,7 +199,9 @@ class _CreatePollDialogState extends State<CreatePollDialog> {
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              prefixIcon: const Icon(Icons.radio_button_unchecked),
+                              prefixIcon: const Icon(
+                                Icons.radio_button_unchecked,
+                              ),
                             ),
                             textCapitalization: TextCapitalization.sentences,
                           ),
@@ -213,72 +221,73 @@ class _CreatePollDialogState extends State<CreatePollDialog> {
                   );
                 },
               ),
-            ),
 
-            // Add option button
-            if (_optionControllers.length < 10)
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _addOption,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Option'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-
-            // Settings
-            CheckboxListTile(
-              title: const Text('Allow multiple selections'),
-              subtitle: const Text('Users can select more than one option'),
-              value: _allowMultiple,
-              onChanged: (value) {
-                setState(() {
-                  _allowMultiple = value ?? false;
-                });
-              },
-              controlAffinity: ListTileControlAffinity.leading,
-            ),
-
-            const SizedBox(height: 16),
-
-            // Actions
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
+              // Add option button
+              if (_optionControllers.length < 10)
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _addOption,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Option'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('Cancel'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isCreating ? null : _createPoll,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+
+              // Settings
+              CheckboxListTile(
+                title: const Text('Allow multiple selections'),
+                subtitle: const Text('Users can select more than one option'),
+                value: _allowMultiple,
+                onChanged: (value) {
+                  setState(() {
+                    _allowMultiple = value ?? false;
+                  });
+                },
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+
+              const SizedBox(height: 16),
+
+              // Actions
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
+                      child: const Text('Cancel'),
                     ),
-                    child: const Text('Create Poll'),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isCreating ? null : _createPoll,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Create Poll'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -327,7 +336,7 @@ class _CreateTodoDialogState extends State<CreateTodoDialog> {
 
   void _createTodo() {
     if (_isCreating) return;
-    
+
     try {
       setState(() {
         _isCreating = true;
@@ -339,10 +348,11 @@ class _CreateTodoDialogState extends State<CreateTodoDialog> {
         return;
       }
 
-      final tasks = _taskControllers
-          .map((controller) => controller.text.trim())
-          .where((text) => text.isNotEmpty)
-          .toList();
+      final tasks =
+          _taskControllers
+              .map((controller) => controller.text.trim())
+              .where((text) => text.isNotEmpty)
+              .toList();
 
       if (tasks.isEmpty) {
         _showError('Please enter at least one task');
@@ -351,14 +361,15 @@ class _CreateTodoDialogState extends State<CreateTodoDialog> {
 
       final todoData = TodoData(
         title: title,
-        items: tasks
-            .asMap()
-            .entries
-            .map((entry) => TodoItem(
-                  id: 'task_${entry.key}',
-                  title: entry.value,
-                ))
-            .toList(),
+        items:
+            tasks
+                .asMap()
+                .entries
+                .map(
+                  (entry) =>
+                      TodoItem(id: 'task_${entry.key}', title: entry.value),
+                )
+                .toList(),
       );
 
       Navigator.of(context).pop(todoData);
@@ -388,72 +399,76 @@ class _CreateTodoDialogState extends State<CreateTodoDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+      insetPadding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 40,
+        bottom:0,
       ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        padding: const EdgeInsets.all(24),
-        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Icon(
-                  Icons.task_alt,
-                  color: colorScheme.primary,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Create To-Do List',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+        padding: const EdgeInsets.all(20),
+        constraints: const BoxConstraints(
+          maxWidth: 400,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Icon(Icons.task_alt, color: colorScheme.primary, size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Create To-Do List',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // Title input
-            TextField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                labelText: 'List Title',
-                hintText: 'What needs to be done?',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                prefixIcon: const Icon(Icons.title),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
               ),
-              textCapitalization: TextCapitalization.sentences,
-            ),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-            // Tasks
-            Text(
-              'Tasks',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              // Title input
+              TextField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  labelText: 'List Title',
+                  hintText: 'What needs to be done?',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  prefixIcon: const Icon(Icons.title),
+                ),
+                textCapitalization: TextCapitalization.sentences,
               ),
-            ),
-            const SizedBox(height: 12),
 
-            SizedBox(
-              height: 220,
-              child: ListView.builder(
+              const SizedBox(height: 20),
+
+              // Tasks
+              Text(
+                'Tasks',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Tasks list - no fixed height
+              ListView.builder(
                 shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
                 itemCount: _taskControllers.length,
                 itemBuilder: (context, index) {
                   return Container(
@@ -469,7 +484,9 @@ class _CreateTodoDialogState extends State<CreateTodoDialog> {
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              prefixIcon: const Icon(Icons.check_box_outline_blank),
+                              prefixIcon: const Icon(
+                                Icons.check_box_outline_blank,
+                              ),
                             ),
                             textCapitalization: TextCapitalization.sentences,
                           ),
@@ -489,59 +506,59 @@ class _CreateTodoDialogState extends State<CreateTodoDialog> {
                   );
                 },
               ),
-            ),
 
-            // Add task button
-            if (_taskControllers.length < 20)
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _addTask,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Task'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 16),
-
-            // Actions
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
+              // Add task button
+              if (_taskControllers.length < 20)
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _addTask,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Task'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('Cancel'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isCreating ? null : _createTodo,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+
+              const SizedBox(height: 16),
+
+              // Actions
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
+                      child: const Text('Cancel'),
                     ),
-                    child: const Text('Create List'),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isCreating ? null : _createTodo,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Create List'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

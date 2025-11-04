@@ -6,11 +6,7 @@ class BalanceTile extends StatelessWidget {
   final UserBalance balance;
   final VoidCallback? onTap;
 
-  const BalanceTile({
-    super.key,
-    required this.balance,
-    this.onTap,
-  });
+  const BalanceTile({super.key, required this.balance, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -23,9 +19,7 @@ class BalanceTile extends StatelessWidget {
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       color: colorScheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
@@ -88,7 +82,10 @@ class BalanceTile extends StatelessWidget {
                   Text(
                     "${isPositive ? '+ ' : '- '}₹${netBalance.abs().toStringAsFixed(2)}",
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: isPositive ? colorScheme.secondary : colorScheme.error,
+                      color:
+                          isPositive
+                              ? colorScheme.secondary
+                              : colorScheme.error,
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
                     ),
@@ -127,7 +124,8 @@ class BalanceTile extends StatelessWidget {
   String _getInitials(String name) {
     final parts = name.trim().split(' ');
     if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
-    return (parts[0].substring(0, 1) + parts.last.substring(0, 1)).toUpperCase();
+    return (parts[0].substring(0, 1) + parts.last.substring(0, 1))
+        .toUpperCase();
   }
 
   /// Widget for breakdown item (Paid/Owes)

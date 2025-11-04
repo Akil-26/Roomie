@@ -62,21 +62,12 @@ class MessageEntity {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'MessageEntity(id: $id, sender: $senderName, type: $type)';
+  String toString() =>
+      'MessageEntity(id: $id, sender: $senderName, type: $type)';
 }
 
 /// Message Types
-enum MessageType {
-  text,
-  image,
-  system,
-}
+enum MessageType { text, image, system }
 
 /// Message Status
-enum MessageStatus {
-  sending,
-  sent,
-  delivered,
-  read,
-  failed,
-}
+enum MessageStatus { sending, sent, delivered, read, failed }

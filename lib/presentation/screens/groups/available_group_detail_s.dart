@@ -147,12 +147,15 @@ class _AvailableGroupDetailScreenState
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 280.0,
+            expandedHeight: screenHeight * 0.35,  // 35% of screen height
             backgroundColor: colorScheme.surface,
             elevation: 0,
             pinned: true,
@@ -173,7 +176,7 @@ class _AvailableGroupDetailScreenState
           ),
           SliverToBoxAdapter(
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(screenWidth * 0.05),  // 5% padding
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -191,11 +194,11 @@ class _AvailableGroupDetailScreenState
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: screenWidth * 0.04),  // 4% gap
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.03,
+                          vertical: screenHeight * 0.007,
                         ),
                         decoration: BoxDecoration(
                           color: colorScheme.primary.withValues(alpha: 0.12),
@@ -212,7 +215,7 @@ class _AvailableGroupDetailScreenState
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   Text(
                     widget.group['description'] ?? 'No description available.',
                     style: textTheme.bodyLarge?.copyWith(
@@ -221,16 +224,16 @@ class _AvailableGroupDetailScreenState
                       height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: screenHeight * 0.03),  // 3% gap
                   Divider(height: 1, color: colorScheme.outlineVariant),
-                  const SizedBox(height: 24),
+                  SizedBox(height: screenHeight * 0.03),  // 3% gap
                   _buildFullWidthInfoCard(
                     icon: Icons.location_on_outlined,
                     title: 'Location',
                     value: widget.group['location'] ?? 'Not specified',
                     color: colorScheme.primary,
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   Row(
                     children: [
                       Expanded(
@@ -238,10 +241,10 @@ class _AvailableGroupDetailScreenState
                           icon: Icons.attach_money,
                           title: 'Rent',
                           value: _formatRent(rentAmount, rentCurrency),
-                          color: colorScheme.secondary,
+                          color: colorScheme.primary,
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: screenWidth * 0.04),  // 4% gap
                       Expanded(
                         child: _buildInfoCard(
                           icon: Icons.account_balance_wallet_outlined,
@@ -275,16 +278,16 @@ class _AvailableGroupDetailScreenState
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   _buildInfoCard(
                     icon: Icons.calendar_today_outlined,
                     title: 'Created On',
                     value: _formatTimestamp(
                       widget.group['createdAt'] as Timestamp?,
                     ),
-                    color: colorScheme.secondary,
+                    color: colorScheme.tertiary,
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: screenHeight * 0.03),  // 3% gap
                   if (widget.group['amenities'] != null &&
                       (widget.group['amenities'] as List).isNotEmpty) ...[
                     Text(
@@ -292,14 +295,14 @@ class _AvailableGroupDetailScreenState
                       style: textTheme.titleLarge?.copyWith(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: colorScheme.onSurface,
-                      ),
+                            color: colorScheme.onSurface,
+                          ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: screenHeight * 0.015),  // 1.5% gap
                     _buildAmenitiesGrid(
                       List<String>.from(widget.group['amenities']),
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: screenHeight * 0.03),  // 3% gap
                   ],
                 ],
               ),
@@ -308,14 +311,21 @@ class _AvailableGroupDetailScreenState
         ],
       ),
       bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+        padding: EdgeInsets.fromLTRB(
+          screenWidth * 0.05,  // 5% left
+          screenHeight * 0.012,  // 1.2% top
+          screenWidth * 0.05,  // 5% right
+          screenHeight * 0.025,  // 2.5% bottom
+        ),
         decoration: BoxDecoration(
           color: colorScheme.surface,
-          border: Border(top: BorderSide(color: colorScheme.outlineVariant, width: 1)),
+          border: Border(
+            top: BorderSide(color: colorScheme.outlineVariant, width: 1),
+          ),
         ),
         child: SizedBox(
           width: double.infinity,
-          height: 52,
+          height: screenHeight * 0.065,  // 6.5% height
           child: ElevatedButton(
             onPressed: _isLoading ? null : _requestToJoin,
             style: ElevatedButton.styleFrom(
@@ -331,8 +341,8 @@ class _AvailableGroupDetailScreenState
             child:
                 _isLoading
                     ? SizedBox(
-                      height: 24,
-                      width: 24,
+                      height: screenWidth * 0.06,  // 6% size
+                      width: screenWidth * 0.06,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
                         valueColor: AlwaysStoppedAnimation<Color>(
@@ -392,7 +402,9 @@ class _AvailableGroupDetailScreenState
                     color:
                         _currentImageIndex == index
                             ? colorScheme.onInverseSurface
-                            : colorScheme.onInverseSurface.withValues(alpha: 0.5),
+                            : colorScheme.onInverseSurface.withValues(
+                              alpha: 0.5,
+                            ),
                   ),
                 );
               }),
@@ -403,25 +415,28 @@ class _AvailableGroupDetailScreenState
   }
 
   Widget _buildPlaceholderImage() {
+    final screenWidth = MediaQuery.of(context).size.width;
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       color: colorScheme.surfaceContainerHighest,
       child: Center(
-        child: Icon(Icons.group, color: colorScheme.onSurfaceVariant, size: 60),
+        child: Icon(Icons.group, color: colorScheme.onSurfaceVariant, size: screenWidth * 0.15),  // 15% icon
       ),
     );
   }
 
   Widget _buildAmenitiesGrid(List<String> amenities) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: screenWidth * 0.02,  // 2% spacing
+      runSpacing: screenHeight * 0.01,  // 1% run spacing
       children:
           amenities.map((amenity) {
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03, vertical: screenHeight * 0.007),  // Dynamic padding
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(16),
@@ -446,10 +461,12 @@ class _AvailableGroupDetailScreenState
     required String value,
     required Color color,
   }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(screenWidth * 0.04),  // 4% padding
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
@@ -465,8 +482,8 @@ class _AvailableGroupDetailScreenState
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 12),
+          Icon(icon, color: color, size: screenWidth * 0.055),  // 5.5% icon
+          SizedBox(width: screenWidth * 0.03),  // 3% gap
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -479,7 +496,7 @@ class _AvailableGroupDetailScreenState
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: screenHeight * 0.005),  // 0.5% gap
                 Text(
                   value,
                   style: textTheme.titleMedium?.copyWith(
@@ -502,10 +519,12 @@ class _AvailableGroupDetailScreenState
     required String value,
     required Color color,
   }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(screenWidth * 0.04),  // 4% padding
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
@@ -524,8 +543,8 @@ class _AvailableGroupDetailScreenState
         children: [
           Row(
             children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(width: 8),
+              Icon(icon, color: color, size: screenWidth * 0.055),  // 5.5% icon
+              SizedBox(width: screenWidth * 0.02),  // 2% gap
               Text(
                 title,
                 style: textTheme.bodyMedium?.copyWith(
@@ -536,7 +555,7 @@ class _AvailableGroupDetailScreenState
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: screenHeight * 0.01),  // 1% gap
           Text(
             value,
             style: textTheme.titleMedium?.copyWith(

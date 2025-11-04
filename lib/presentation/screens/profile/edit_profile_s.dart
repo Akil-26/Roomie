@@ -1,13 +1,15 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:roomie/data/datasources/firestore_service.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/models/user_model.dart';
 import 'package:roomie/presentation/widgets/profile_image_widget.dart';
 import 'dart:io';
-
 
 class EditProfileScreen extends StatefulWidget {
   final UserModel currentUser;
@@ -26,7 +28,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   // Controllers for form fields
   late TextEditingController _usernameController;
-  late TextEditingController _nameController;
+  late TextEditingController _emailController;
   late TextEditingController _bioController;
   late TextEditingController _phoneController;
   late TextEditingController _occupationController;
@@ -36,6 +38,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   XFile? _selectedXFile; // For web compatibility
   bool _isLoading = false;
   String? _currentProfileImageUrl;
+  bool _isSendingEmailVerification = false;
+  bool _isCheckingEmailVerification = false;
+  String? _pendingEmail; // email awaiting verification
+  bool _emailVerified = false;
 
   @override
   void initState() {
@@ -44,8 +50,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _usernameController = TextEditingController(
       text: widget.currentUser.username ?? '',
     );
-    _nameController = TextEditingController(
-      text: widget.currentUser.name ?? '',
+    _emailController = TextEditingController(
+      text: widget.currentUser.email,
     );
     _bioController = TextEditingController(text: widget.currentUser.bio ?? '');
     _phoneController = TextEditingController(
@@ -58,12 +64,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       text: widget.currentUser.age?.toString() ?? '',
     );
     _currentProfileImageUrl = widget.currentUser.profileImageUrl;
+    _emailVerified = FirebaseAuth.instance.currentUser?.emailVerified ?? false;
+
+    // Clear pending state if user edits email away from the pending one
+    _emailController.addListener(() {
+      final pending = _pendingEmail;
+      if (pending != null &&
+          _emailController.text.trim().toLowerCase() != pending.toLowerCase()) {
+        setState(() {
+          _pendingEmail = null;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _usernameController.dispose();
-    _nameController.dispose();
+    _emailController.dispose();
     _bioController.dispose();
     _phoneController.dispose();
     _occupationController.dispose();
@@ -138,27 +156,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         userId: user.uid,
         username: _usernameController.text.trim(),
         bio: _bioController.text.trim(),
-        email: widget.currentUser.email,
+        email: FirebaseAuth.instance.currentUser?.email ?? widget.currentUser.email,
         phone: _phoneController.text.trim(),
         profileImage: _selectedXFile ?? _selectedImage, // Pass XFile or File
+        occupation:
+            _occupationController.text.trim().isEmpty
+                ? null
+                : _occupationController.text.trim(),
+        age: age,
       );
-
-      // Then update additional fields directly in Firestore
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-            'name':
-                _nameController.text.trim().isEmpty
-                    ? null
-                    : _nameController.text.trim(),
-            'occupation':
-                _occupationController.text.trim().isEmpty
-                    ? null
-                    : _occupationController.text.trim(),
-            'age': age,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
 
       if (mounted) {
         final colorScheme = Theme.of(context).colorScheme;
@@ -170,7 +176,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         );
         // Fetch fresh doc to obtain latest profileImageUrl immediately
-        final fresh = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final fresh =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .get();
         final freshData = fresh.data();
         final freshUrl = freshData?['profileImageUrl'] as String?;
         if (mounted) {
@@ -194,8 +204,149 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _sendEmailVerificationForUpdate() async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final newEmail = _emailController.text.trim();
+
+    if (newEmail.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please enter an email'),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    // Basic email format check
+    final emailRegex = RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+    if (!emailRegex.hasMatch(newEmail)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please enter a valid email'),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSendingEmailVerification = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw FirebaseAuthException(code: 'user-not-found');
+
+      // Send verification depending on whether email changed or not
+      final currentEmail = user.email ?? '';
+      final actionCodeSettings = ActionCodeSettings(
+        url: 'https://roomie-app.example.com/email-update',
+        handleCodeInApp: false,
+      );
+
+      if (newEmail.toLowerCase() == currentEmail.toLowerCase()) {
+        // Verify existing email
+        await user.sendEmailVerification(actionCodeSettings);
+      } else {
+        // Verify before update to new email
+        await user.verifyBeforeUpdateEmail(newEmail, actionCodeSettings);
+      }
+
+      setState(() {
+        _pendingEmail = newEmail;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Verification link sent to $newEmail'),
+          backgroundColor: colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      String message = 'Failed to send verification';
+      if (e.code == 'requires-recent-login') {
+        message = 'Please re-login to change your email.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Invalid email address.';
+      } else if (e.code == 'email-already-in-use') {
+        message = 'Email already in use.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSendingEmailVerification = false);
+    }
+  }
+
+  Future<void> _checkEmailVerificationStatus() async {
+    final colorScheme = Theme.of(context).colorScheme;
+    setState(() => _isCheckingEmailVerification = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw FirebaseAuthException(code: 'user-not-found');
+      await user.reload();
+      final refreshed = FirebaseAuth.instance.currentUser;
+      if (refreshed != null) {
+        final updatedEmail = refreshed.email ?? '';
+        final verified = refreshed.emailVerified;
+        if (_pendingEmail != null && updatedEmail.toLowerCase() == _pendingEmail!.toLowerCase() && verified) {
+          setState(() {
+            _emailController.text = updatedEmail;
+            _pendingEmail = null;
+            _emailVerified = true;
+          });
+          // Sync the new verified email to Firestore profile immediately
+          try {
+            await _firestoreService.saveUserDetails(refreshed.uid, updatedEmail);
+          } catch (_) {}
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Email verified and updated!'),
+              backgroundColor: colorScheme.secondary,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text("Not verified yet. Please check your inbox."),
+              backgroundColor: colorScheme.onSurfaceVariant,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking verification: $e'),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isCheckingEmailVerification = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -224,11 +375,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child:
                 _isLoading
                     ? SizedBox(
-                      width: 16,
-                      height: 16,
+                      width: screenWidth * 0.04,
+                      height: screenWidth * 0.04,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onSurface),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          colorScheme.onSurface,
+                        ),
                       ),
                     )
                     : Text(
@@ -244,136 +397,318 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(screenWidth * 0.05),
           child: Column(
             children: [
-              // Profile Picture Section
-              Center(
-                child: Stack(
+              // Header card with large profile image
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(screenWidth * 0.04),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: colorScheme.outlineVariant),
+                ),
+                child: Column(
                   children: [
-                    // Show selected image if user picked one, otherwise show current MongoDB profile image
-                    ProfileImageWidget(
-                      imageUrl: _currentProfileImageUrl,
-                      localPreviewFile: !kIsWeb ? _selectedImage : null,
-                      radius: 60,
-                      placeholder: Icon(
-                        Icons.person,
-                        size: 60,
-                        color: colorScheme.onSurfaceVariant,
+                    Center(
+                      child: Stack(
+                        children: [
+                          ProfileImageWidget(
+                            imageUrl: _currentProfileImageUrl,
+                            localPreviewFile: !kIsWeb ? _selectedImage : null,
+                            radius: screenWidth * 0.2,
+                            placeholder: Icon(
+                              Icons.person,
+                              size: screenWidth * 0.2,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: GestureDetector(
+                              onTap: _pickImage,
+                              child: Container(
+                                padding: EdgeInsets.all(screenWidth * 0.025),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.camera_alt,
+                                  color: colorScheme.onPrimary,
+                                  size: screenWidth * 0.045,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: _pickImage,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.camera_alt,
-                            color: colorScheme.onPrimary,
-                            size: 16,
-                          ),
-                        ),
+                    SizedBox(height: screenHeight * 0.015),
+                    Text(
+                      _selectedXFile != null || _selectedImage != null
+                          ? 'New image selected'
+                          : (_currentProfileImageUrl != null &&
+                                  _currentProfileImageUrl!.isNotEmpty
+                              ? 'Current profile image'
+                              : 'No profile image'),
+                      style: TextStyle(
+                        color:
+                            _selectedXFile != null || _selectedImage != null
+                                ? colorScheme.secondary
+                                : colorScheme.onSurfaceVariant,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 16),
-
-              // Profile Picture Status Text
-              Text(
-                _selectedXFile != null || _selectedImage != null
-                    ? 'New image selected'
-                    : (_currentProfileImageUrl != null &&
-                            _currentProfileImageUrl!.isNotEmpty
-                        ? 'Current profile image'
-                        : 'No profile image'),
-                style: TextStyle(
-                  color: _selectedXFile != null || _selectedImage != null
-                      ? colorScheme.secondary
-                      : colorScheme.onSurfaceVariant,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 30),
+              SizedBox(height: screenHeight * 0.03),
 
               // Form Fields
-              _buildTextField(
-                controller: _usernameController,
-                label: 'Username',
-                hint: 'Enter your username',
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Username is required';
-                  }
-                  return null;
-                },
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(screenWidth * 0.03),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: colorScheme.outlineVariant),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionTitle('Profile'),
+                    SizedBox(height: screenHeight * 0.01),
+                    _buildTextField(
+                      controller: _usernameController,
+                      label: 'Username',
+                      hint: 'Enter your username',
+                      icon: Icons.alternate_email,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Username is required';
+                        }
+                        return null;
+                      },
+                    ),
+
+                    SizedBox(height: screenHeight * 0.015),
+
+                    _buildTextField(
+                      controller: _bioController,
+                      label: 'Bio',
+                      hint: 'Tell us about yourself',
+                      icon: Icons.info_outline,
+                      maxLines: 3,
+                    ),
+
+                    SizedBox(height: screenHeight * 0.015),
+                    Divider(height: 16, color: colorScheme.outlineVariant),
+                    SizedBox(height: screenHeight * 0.008),
+
+                    _buildSectionTitle('Contact'),
+                    SizedBox(height: screenHeight * 0.01),
+                    _buildTextField(
+                      controller: _emailController,
+                      label: 'Email',
+                      hint: 'Your email address',
+                      icon: Icons.mail_outline,
+                      keyboardType: TextInputType.emailAddress,
+                      readOnly: false,
+                    ),
+
+                    SizedBox(height: screenHeight * 0.01),
+                    Builder(
+                      builder: (context) {
+                        final currentAuth = FirebaseAuth.instance.currentUser;
+                        final matchesAuthEmail =
+                            (currentAuth?.email ?? '').toLowerCase() ==
+                            _emailController.text.trim().toLowerCase();
+                        final isVerified = currentAuth?.emailVerified ?? false;
+
+                        final shouldShowVerifyRow =
+                            _pendingEmail != null || !isVerified || !matchesAuthEmail;
+                        if (!shouldShowVerifyRow) return const SizedBox.shrink();
+
+                        final isEmailChanged = !matchesAuthEmail;
+                        final buttonLabel = isEmailChanged
+                            ? 'Verify & Update'
+                            : 'Send verification';
+
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isSendingEmailVerification
+                                    ? null
+                                    : _sendEmailVerificationForUpdate,
+                                icon: _isSendingEmailVerification
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                            colorScheme.primary,
+                                          ),
+                                        ),
+                                      )
+                                    : const Icon(Icons.mark_email_read_outlined),
+                                label: Text(buttonLabel),
+                              ),
+                            ),
+                            SizedBox(width: screenWidth * 0.03),
+                            if (_pendingEmail != null)
+                              TextButton(
+                                onPressed: _isCheckingEmailVerification
+                                    ? null
+                                    : _checkEmailVerificationStatus,
+                                child: _isCheckingEmailVerification
+                                    ? const Text('Checking…')
+                                    : const Text("I've verified"),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                    SizedBox(height: screenHeight * 0.008),
+                    Builder(
+                      builder: (context) {
+                        final currentAuth = FirebaseAuth.instance.currentUser;
+                        final matchesAuthEmail =
+                            (currentAuth?.email ?? '').toLowerCase() ==
+                            _emailController.text.trim().toLowerCase();
+                        if (_emailVerified && matchesAuthEmail) {
+                          return Row(
+                            children: [
+                              Icon(Icons.verified, color: colorScheme.tertiary, size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Verified',
+                                style: TextStyle(
+                                  color: colorScheme.tertiary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          );
+                        } else if (_pendingEmail != null) {
+                          return Row(
+                            children: [
+                              Icon(Icons.schedule, color: colorScheme.onSurfaceVariant, size: 18),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Verification sent to $_pendingEmail. Open email to confirm.',
+                                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
+                                ),
+                              ),
+                            ],
+                          );
+                        } else {
+                          return const SizedBox.shrink();
+                        }
+                      },
+                    ),
+
+                    SizedBox(height: screenHeight * 0.015),
+                    _buildTextField(
+                      controller: _phoneController,
+                      label: 'Phone',
+                      hint: 'Enter your phone number',
+                      icon: Icons.phone_outlined,
+                      keyboardType: TextInputType.phone,
+                    ),
+
+                    SizedBox(height: screenHeight * 0.015),
+                    Divider(height: 16, color: colorScheme.outlineVariant),
+                    SizedBox(height: screenHeight * 0.008),
+
+                    _buildSectionTitle('Other'),
+                    SizedBox(height: screenHeight * 0.01),
+                    _buildTextField(
+                      controller: _occupationController,
+                      label: 'Occupation',
+                      hint: 'Enter your occupation',
+                      icon: Icons.work_outline,
+                    ),
+
+                    SizedBox(height: screenHeight * 0.015),
+
+                    _buildTextField(
+                      controller: _ageController,
+                      label: 'Age',
+                      hint: 'Enter your age',
+                      icon: Icons.cake_outlined,
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          final age = int.tryParse(value);
+                          if (age == null || age < 18 || age > 100) {
+                            return 'Please enter a valid age (18-100)';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
               ),
 
-              const SizedBox(height: 16),
-
-              _buildTextField(
-                controller: _nameController,
-                label: 'Full Name',
-                hint: 'Enter your full name',
-              ),
-
-              const SizedBox(height: 16),
-
-              _buildTextField(
-                controller: _bioController,
-                label: 'Bio',
-                hint: 'Tell us about yourself',
-                maxLines: 3,
-              ),
-
-              const SizedBox(height: 16),
-
-              _buildTextField(
-                controller: _phoneController,
-                label: 'Phone',
-                hint: 'Enter your phone number',
-                keyboardType: TextInputType.phone,
-              ),
-
-              const SizedBox(height: 16),
-
-              _buildTextField(
-                controller: _occupationController,
-                label: 'Occupation',
-                hint: 'Enter your occupation',
-              ),
-
-              const SizedBox(height: 16),
-
-              _buildTextField(
-                controller: _ageController,
-                label: 'Age',
-                hint: 'Enter your age',
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value != null && value.isNotEmpty) {
-                    final age = int.tryParse(value);
-                    if (age == null || age < 18 || age > 100) {
-                      return 'Please enter a valid age (18-100)';
-                    }
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 40),
+              SizedBox(height: screenHeight * 0.03),
             ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.fromLTRB(
+            screenWidth * 0.05,
+            0,
+            screenWidth * 0.05,
+            screenHeight * 0.02 + MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            height: screenHeight * 0.06,
+            child: FilledButton.icon(
+              onPressed: _isLoading ? null : _saveProfile,
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: _isLoading
+                  ? SizedBox(
+                      width: screenWidth * 0.045,
+                      height: screenWidth * 0.045,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
+                      ),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: Text(
+                _isLoading ? 'Saving…' : 'Save changes',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -384,14 +719,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     required TextEditingController controller,
     required String label,
     required String hint,
+    IconData? icon,
     TextInputType? keyboardType,
     int maxLines = 1,
     String? Function(String?)? validator,
+    bool readOnly = false,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
-
+    final screenHeight = MediaQuery.of(context).size.height;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -402,15 +740,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: screenHeight * 0.01),
         TextFormField(
           controller: controller,
           keyboardType: keyboardType,
           maxLines: maxLines,
           validator: validator,
+          readOnly: readOnly,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+            prefixIcon: icon != null
+                ? Icon(icon, color: colorScheme.onSurfaceVariant)
+                : null,
+            isDense: true,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: colorScheme.outlineVariant),
@@ -431,7 +774,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             fillColor: colorScheme.surfaceContainerHighest,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
-              vertical: 12,
+              vertical: 10,
             ),
           ),
           style: textTheme.bodyMedium?.copyWith(
@@ -440,6 +783,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    return Text(
+      title,
+      style: textTheme.titleSmall?.copyWith(
+        color: colorScheme.onSurface,
+        fontWeight: FontWeight.w700,
+      ),
     );
   }
 }

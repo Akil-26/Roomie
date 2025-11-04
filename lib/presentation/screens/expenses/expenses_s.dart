@@ -26,9 +26,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   Future<void> _loadExpenses() async {
     try {
-      final expenses = await _expenseService.getGroupExpenses(widget.groupId).first;
+      final expenses =
+          await _expenseService.getGroupExpenses(widget.groupId).first;
       final summary = await _expenseService.getExpensesSummary(widget.groupId);
-      
+
       if (mounted) {
         setState(() {
           _expenses = expenses;
@@ -39,15 +40,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading expenses: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading expenses: $e')));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
@@ -56,25 +59,46 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                if (_summary.isNotEmpty) ExpenseSummaryCard(summary: _summary),
-                Expanded(
-                  child: _expenses.isEmpty
-                      ? const Center(
-                          child: Text('No expenses yet'),
-                        )
-                      : ListView.builder(
-                          itemCount: _expenses.length,
-                          itemBuilder: (context, index) {
-                            return ExpenseCard(expense: _expenses[index]);
-                          },
-                        ),
+      body:
+          _isLoading
+              ? Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
                 ),
-              ],
-            ),
+              )
+              : Column(
+                children: [
+                  if (_summary.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.all(screenWidth * 0.04),
+                      child: ExpenseSummaryCard(summary: _summary),
+                    ),
+                  Expanded(
+                    child:
+                        _expenses.isEmpty
+                            ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.receipt_long, size: screenWidth * 0.16, color: colorScheme.onSurfaceVariant),
+                                  SizedBox(height: screenHeight * 0.02),
+                                  Text('No expenses yet', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                                ],
+                              ),
+                            )
+                            : ListView.builder(
+                              padding: EdgeInsets.all(screenWidth * 0.03),
+                              itemCount: _expenses.length,
+                              itemBuilder: (context, index) {
+                                return Padding(
+                                  padding: EdgeInsets.only(bottom: screenHeight * 0.01),
+                                  child: ExpenseCard(expense: _expenses[index]),
+                                );
+                              },
+                            ),
+                  ),
+                ],
+              ),
     );
   }
 }

@@ -10,8 +10,8 @@ class RoomieLoadingHelper {
     if (_overlayEntry != null) return; // Prevent multiple overlays
 
     _overlayEntry = OverlayEntry(
-      builder: (context) =>
-          RoomieFullScreenLoading(text: message ?? 'Loading...'),
+      builder:
+          (context) => RoomieFullScreenLoading(text: message ?? 'Loading...'),
     );
 
     Overlay.of(context).insert(_overlayEntry!);
@@ -33,31 +33,34 @@ class RoomieLoadingHelper {
       context: context,
       barrierDismissible: barrierDismissible,
       barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.7),
-      builder: (context) => PopScope(
-        canPop: barrierDismissible,
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            margin: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  spreadRadius: 5,
+      builder:
+          (context) => PopScope(
+            canPop: barrierDismissible,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                margin: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.shadow.withValues(alpha: 0.1),
+                      blurRadius: 10,
+                      spreadRadius: 5,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: RoomieLoadingWidget(
-              size: 80,
-              showText: true,
-              text: message ?? 'Loading...',
+                child: RoomieLoadingWidget(
+                  size: 80,
+                  showText: true,
+                  text: message ?? 'Loading...',
+                ),
+              ),
             ),
           ),
-        ),
-      ),
     );
   }
 
@@ -74,7 +77,9 @@ class RoomieLoadingHelper {
             const SizedBox(width: 12),
             Text(
               message ?? 'Loading...',
-              style: textTheme.bodyMedium?.copyWith(color: colorScheme.onPrimary),
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onPrimary,
+              ),
             ),
           ],
         ),

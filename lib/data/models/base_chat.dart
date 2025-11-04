@@ -17,31 +17,31 @@ abstract class BaseChat {
 
   /// Abstract method to be implemented by subclasses
   String getChatTitle();
-  
+
   /// Abstract method to get chat participants
   List<String> getParticipants();
-  
+
   /// Abstract method to get chat image URL
   String? getChatImageUrl();
-  
+
   /// Common method for all chat types
   bool hasUnreadMessages(String userId) {
     return getUnreadCount(userId) > 0;
   }
-  
+
   /// Abstract method to get unread count for a specific user
   int getUnreadCount(String userId);
-  
+
   /// Convert to map for database operations
   Map<String, dynamic> toMap();
-  
+
   /// Common utility method
   String getTimeAgo() {
     if (lastMessageTime == null) return 'No messages';
-    
+
     final now = DateTime.now();
     final difference = now.difference(lastMessageTime!);
-    
+
     if (difference.inDays > 0) {
       return '${difference.inDays}d ago';
     } else if (difference.inHours > 0) {
@@ -109,9 +109,10 @@ class IndividualChat extends BaseChat {
       otherUserName: map['otherUserName'],
       otherUserImageUrl: map['otherUserImageUrl'],
       unreadCounts: Map<String, int>.from(map['unreadCounts'] ?? {}),
-      lastMessageTime: map['lastMessageTime'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['lastMessageTime'])
-          : null,
+      lastMessageTime:
+          map['lastMessageTime'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(map['lastMessageTime'])
+              : null,
       lastMessage: map['lastMessage'],
       lastSenderId: map['lastSenderId'],
     );
@@ -181,9 +182,10 @@ class GroupChat extends BaseChat {
       participantNames: Map<String, String>.from(map['participantNames'] ?? {}),
       unreadCounts: Map<String, int>.from(map['unreadCounts'] ?? {}),
       adminId: map['adminId'],
-      lastMessageTime: map['lastMessageTime'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['lastMessageTime'])
-          : null,
+      lastMessageTime:
+          map['lastMessageTime'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(map['lastMessageTime'])
+              : null,
       lastMessage: map['lastMessage'],
       lastSenderId: map['lastSenderId'],
     );
@@ -191,8 +193,8 @@ class GroupChat extends BaseChat {
 
   /// Group-specific methods
   bool isAdmin(String userId) => adminId == userId;
-  
+
   bool isMember(String userId) => participants.contains(userId);
-  
+
   int get memberCount => participants.length;
 }

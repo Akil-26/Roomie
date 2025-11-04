@@ -1,6 +1,5 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 String _env(String key) {
@@ -12,9 +11,11 @@ String _env(String key) {
   } catch (e) {
     // dotenv not loaded, use fallback
   }
-  
+
   // SECURITY: No hardcoded API keys! Must be provided via environment variables
-  throw Exception('Firebase API key not found! Please set FIREBASE_API_KEY in your .env file');
+  throw Exception(
+    'Firebase API key not found! Please set FIREBASE_API_KEY in your .env file',
+  );
 }
 
 class DefaultFirebaseOptions {

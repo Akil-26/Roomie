@@ -89,8 +89,10 @@ class CloudinaryService {
       final url = CloudinaryConfig.uploadUrlFor(resourceType);
       debugPrint('Cloudinary: Starting upload to $url');
       debugPrint('Cloudinary: Using cloud name: ${CloudinaryConfig.cloudName}');
-      debugPrint('Cloudinary: Using upload preset: ${CloudinaryConfig.uploadPreset}');
-      
+      debugPrint(
+        'Cloudinary: Using upload preset: ${CloudinaryConfig.uploadPreset}',
+      );
+
       final uri = Uri.parse(url);
       final request = http.MultipartRequest('POST', uri)
         ..fields['upload_preset'] = CloudinaryConfig.uploadPreset;
@@ -110,11 +112,7 @@ class CloudinaryService {
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: fileName,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: fileName),
       );
 
       final streamed = await request.send();
@@ -126,7 +124,8 @@ class CloudinaryService {
         return secureUrl;
       } else {
         debugPrint(
-            'Cloudinary upload failed: ${response.statusCode} ${response.body}');
+          'Cloudinary upload failed: ${response.statusCode} ${response.body}',
+        );
         return null;
       }
     } catch (e) {

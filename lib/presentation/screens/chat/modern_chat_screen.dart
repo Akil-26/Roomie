@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/chat_service.dart';
 import 'package:roomie/data/datasources/cloudinary_service.dart';
@@ -92,7 +93,27 @@ class _ModernChatScreenState extends State<ModernChatScreen>
         if (!members.contains(currentUser.uid)) {
           members.add(currentUser.uid);
         }
-        memberNames[currentUser.uid] = currentUser.displayName ?? 'You';
+        
+        // Fetch current user's username from Firestore instead of using Auth displayName
+        try {
+          final currentUserDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .get();
+          
+          if (currentUserDoc.exists && currentUserDoc.data() != null) {
+            final currentUserData = currentUserDoc.data()!;
+            memberNames[currentUser.uid] = currentUserData['username'] as String? ??
+                                           currentUserData['name'] as String? ??
+                                           currentUser.email?.split('@')[0] ?? 
+                                           'You';
+          } else {
+            memberNames[currentUser.uid] = currentUser.email?.split('@')[0] ?? 'You';
+          }
+        } catch (e) {
+          debugPrint('Error loading current user data: $e');
+          memberNames[currentUser.uid] = currentUser.email?.split('@')[0] ?? 'You';
+        }
 
         _memberIds = members;
         _memberNames = memberNames;
@@ -112,7 +133,8 @@ class _ModernChatScreenState extends State<ModernChatScreen>
           throw Exception('Missing user identifier');
         }
         final otherUserName = data['otherUserName'] ?? data['name'] ?? 'User';
-        final otherUserImage = data['otherUserImageUrl'] ??
+        final otherUserImage =
+            data['otherUserImageUrl'] ??
             data['profileImageUrl'] ??
             data['imageUrl'];
 
@@ -122,9 +144,28 @@ class _ModernChatScreenState extends State<ModernChatScreen>
           otherUserImageUrl: otherUserImage?.toString(),
         );
 
+        // Fetch current user's username from Firestore for 1-on-1 chat
+        String currentUserDisplayName = 'You';
+        try {
+          final currentUserDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .get();
+          
+          if (currentUserDoc.exists && currentUserDoc.data() != null) {
+            final currentUserData = currentUserDoc.data()!;
+            currentUserDisplayName = currentUserData['username'] as String? ??
+                                    currentUserData['name'] as String? ??
+                                    currentUser.email?.split('@')[0] ?? 
+                                    'You';
+          }
+        } catch (e) {
+          debugPrint('Error loading current user data: $e');
+        }
+
         _memberIds = [currentUser.uid, otherUserId];
         _memberNames = {
-          currentUser.uid: currentUser.displayName ?? 'You',
+          currentUser.uid: currentUserDisplayName,
           otherUserId: otherUserName,
         };
         _memberImages = {otherUserId: otherUserImage?.toString()};
@@ -219,7 +260,7 @@ class _ModernChatScreenState extends State<ModernChatScreen>
         folder: CloudinaryFolder.chat,
         resourceType: CloudinaryResourceType.image,
       );
-      
+
       if (uploadResult == null) {
         throw Exception('Failed to upload image');
       }
@@ -277,7 +318,7 @@ class _ModernChatScreenState extends State<ModernChatScreen>
         folder: CloudinaryFolder.chat,
         resourceType: CloudinaryResourceType.raw,
       );
-      
+
       if (uploadResult == null) {
         throw Exception('Failed to upload file');
       }
@@ -333,7 +374,7 @@ class _ModernChatScreenState extends State<ModernChatScreen>
         folder: CloudinaryFolder.chat,
         resourceType: CloudinaryResourceType.raw,
       );
-      
+
       if (uploadResult == null) {
         throw Exception('Failed to upload voice message');
       }
@@ -436,7 +477,9 @@ class _ModernChatScreenState extends State<ModernChatScreen>
 
   // Message interaction functions
   Future<void> _editMessage(String newText) async {
-    if (_editingMessage == null || !_initialized || _containerId == null) return;
+    if (_editingMessage == null || !_initialized || _containerId == null) {
+      return;
+    }
 
     try {
       await _chatService.editMessage(
@@ -444,14 +487,14 @@ class _ModernChatScreenState extends State<ModernChatScreen>
         messageId: _editingMessage!.id,
         newText: newText,
       );
-      
+
       setState(() {
         _editingMessage = null;
       });
-      
+
       _messageController.clear();
       _messageFocusNode.unfocus();
-      
+
       _showSuccessSnackBar('Message edited');
     } catch (e) {
       debugPrint('Failed to edit message: $e');
@@ -491,7 +534,11 @@ class _ModernChatScreenState extends State<ModernChatScreen>
     }
   }
 
-  Future<void> _handleTodoToggle(String messageId, String todoId, bool isDone) async {
+  Future<void> _handleTodoToggle(
+    String messageId,
+    String todoId,
+    bool isDone,
+  ) async {
     if (!_initialized || _containerId == null) return;
 
     try {
@@ -511,7 +558,7 @@ class _ModernChatScreenState extends State<ModernChatScreen>
   // Dialog functions
   Future<void> _showCreatePollDialog() async {
     if (!mounted) return;
-    
+
     final result = await showDialog<PollData>(
       context: context,
       builder: (context) => const CreatePollDialog(),
@@ -524,7 +571,7 @@ class _ModernChatScreenState extends State<ModernChatScreen>
 
   Future<void> _showCreateTodoDialog() async {
     if (!mounted) return;
-    
+
     final result = await showDialog<TodoData>(
       context: context,
       builder: (context) => const CreateTodoDialog(),
@@ -553,12 +600,13 @@ class _ModernChatScreenState extends State<ModernChatScreen>
   void _showMessageInfoDialog(MessageModel message) {
     showDialog(
       context: context,
-      builder: (context) => MessageInfoDialog(
-        message: message,
-        memberNames: _memberNames,
-        memberImages: _memberImages,
-        isGroup: _isGroup,
-      ),
+      builder:
+          (context) => MessageInfoDialog(
+            message: message,
+            memberNames: _memberNames,
+            memberImages: _memberImages,
+            isGroup: _isGroup,
+          ),
     );
   }
 
@@ -587,13 +635,13 @@ class _ModernChatScreenState extends State<ModernChatScreen>
 
   String _getChatTitle() {
     if (_isGroup) {
-      return widget.chatData['name'] ?? 
-             widget.chatData['groupName'] ?? 
-             'Group Chat';
+      return widget.chatData['name'] ??
+          widget.chatData['groupName'] ??
+          'Group Chat';
     } else {
-      return widget.chatData['otherUserName'] ?? 
-             widget.chatData['name'] ?? 
-             'Chat';
+      return widget.chatData['otherUserName'] ??
+          widget.chatData['name'] ??
+          'Chat';
     }
   }
 
@@ -602,8 +650,8 @@ class _ModernChatScreenState extends State<ModernChatScreen>
       return widget.chatData['imageUrl']?.toString();
     } else {
       return widget.chatData['otherUserImageUrl']?.toString() ??
-             widget.chatData['profileImageUrl']?.toString() ??
-             widget.chatData['imageUrl']?.toString();
+          widget.chatData['profileImageUrl']?.toString() ??
+          widget.chatData['imageUrl']?.toString();
     }
   }
 
@@ -627,21 +675,23 @@ class _ModernChatScreenState extends State<ModernChatScreen>
             // Chat avatar
             CircleAvatar(
               radius: 20,
-              backgroundImage: _getChatImage() != null
-                  ? NetworkImage(_getChatImage()!)
-                  : null,
+              backgroundImage:
+                  _getChatImage() != null
+                      ? NetworkImage(_getChatImage()!)
+                      : null,
               backgroundColor: colorScheme.primary.withOpacity(0.7),
-              child: _getChatImage() == null
-                  ? Text(
-                      _getChatTitle().isNotEmpty
-                          ? _getChatTitle()[0].toUpperCase()
-                          : 'C',
-                      style: TextStyle(
-                        color: colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    )
-                  : null,
+              child:
+                  _getChatImage() == null
+                      ? Text(
+                        _getChatTitle().isNotEmpty
+                            ? _getChatTitle()[0].toUpperCase()
+                            : 'C',
+                        style: TextStyle(
+                          color: colorScheme.onPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                      : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -687,11 +737,7 @@ class _ModernChatScreenState extends State<ModernChatScreen>
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.edit,
-                    size: 20,
-                    color: colorScheme.primary,
-                  ),
+                  Icon(Icons.edit, size: 20, color: colorScheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -726,106 +772,117 @@ class _ModernChatScreenState extends State<ModernChatScreen>
 
           // Messages list
           Expanded(
-            child: !_initialized
-                ? const Center(child: RoomieLoadingWidget())
-                : StreamBuilder<List<MessageModel>>(
-                    stream: _messagesStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: RoomieLoadingWidget());
-                      }
+            child:
+                !_initialized
+                    ? const Center(child: RoomieLoadingWidget())
+                    : StreamBuilder<List<MessageModel>>(
+                      stream: _messagesStream,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(child: RoomieLoadingWidget());
+                        }
 
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.error_outline,
-                                size: 64,
-                                color: colorScheme.error,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Failed to load messages',
-                                style: theme.textTheme.titleMedium?.copyWith(
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  size: 64,
                                   color: colorScheme.error,
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '${snapshot.error}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurface.withOpacity(0.7),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Failed to load messages',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: colorScheme.error,
+                                  ),
                                 ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      final messages = snapshot.data ?? [];
-
-                      if (messages.isEmpty) {
-                        return Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.chat_outlined,
-                                size: 64,
-                                color: colorScheme.onSurface.withOpacity(0.3),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No messages yet',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  color: colorScheme.onSurface.withOpacity(0.7),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${snapshot.error}',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurface.withOpacity(
+                                      0.7,
+                                    ),
+                                  ),
+                                  textAlign: TextAlign.center,
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Start the conversation by sending a message',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurface.withOpacity(0.5),
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      return ListView.builder(
-                        controller: _scrollController,
-                        reverse: true,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: messages.length,
-                        itemBuilder: (context, index) {
-                          final message = messages[index];
-                          final currentUserId = _authService.currentUser?.uid;
-                          final isCurrentUser = message.senderId == currentUserId;
-
-                          return MessageBubbleWidget(
-                            message: message,
-                            isCurrentUser: isCurrentUser,
-                            isGroup: _isGroup,
-                            memberNames: _memberNames,
-                            memberImages: _memberImages,
-                            currentUserId: currentUserId,
-                            onEdit: isCurrentUser && message.type == MessageType.text
-                                ? _showEditMessageDialog
-                                : null,
-                            onReply: null,
-                            onInfo: _showMessageInfoDialog,
-                            onPollVote: _handlePollVote,
-                            onTodoToggle: _handleTodoToggle,
+                              ],
+                            ),
                           );
-                        },
-                      );
-                    },
-                  ),
+                        }
+
+                        final messages = snapshot.data ?? [];
+
+                        if (messages.isEmpty) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.chat_outlined,
+                                  size: 64,
+                                  color: colorScheme.onSurface.withOpacity(0.3),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No messages yet',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: colorScheme.onSurface.withOpacity(
+                                      0.7,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Start the conversation by sending a message',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurface.withOpacity(
+                                      0.5,
+                                    ),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          controller: _scrollController,
+                          reverse: true,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            final message = messages[index];
+                            final currentUserId = _authService.currentUser?.uid;
+                            final isCurrentUser =
+                                message.senderId == currentUserId;
+
+                            return MessageBubbleWidget(
+                              message: message,
+                              isCurrentUser: isCurrentUser,
+                              isGroup: _isGroup,
+                              memberNames: _memberNames,
+                              memberImages: _memberImages,
+                              currentUserId: currentUserId,
+                              onEdit:
+                                  isCurrentUser &&
+                                          message.type == MessageType.text
+                                      ? _showEditMessageDialog
+                                      : null,
+                              onReply: null,
+                              onInfo: _showMessageInfoDialog,
+                              onPollVote: _handlePollVote,
+                              onTodoToggle: _handleTodoToggle,
+                            );
+                          },
+                        );
+                      },
+                    ),
           ),
 
           // Chat input

@@ -15,6 +15,8 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -52,8 +54,8 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.error_outline, size: 64, color: colorScheme.error),
-                  const SizedBox(height: 16),
+                  Icon(Icons.error_outline, size: screenWidth * 0.16, color: colorScheme.error),  // 16% icon
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   Text(
                     'Error Loading Requests',
                     style: textTheme.titleLarge?.copyWith(
@@ -61,7 +63,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                       color: colorScheme.onSurface,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: screenHeight * 0.01),  // 1% gap
                   Text(
                     snapshot.error.toString(),
                     textAlign: TextAlign.center,
@@ -82,11 +84,11 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.inbox_outlined,
-                    size: 64,
+                    Icons.group_off,
+                    size: screenWidth * 0.16,  // 16% icon
                     color: colorScheme.onSurfaceVariant,
                   ),
-                  SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   Text(
                     'No Join Requests',
                     style: textTheme.titleLarge?.copyWith(
@@ -94,7 +96,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                       color: colorScheme.onSurface,
                     ),
                   ),
-                  SizedBox(height: 8),
+                  SizedBox(height: screenHeight * 0.01),  // 1% gap
                   Text(
                     'When people request to join your group,\\nthey\'ll appear here for approval.',
                     textAlign: TextAlign.center,
@@ -108,7 +110,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(screenWidth * 0.04),  // 4% padding
             itemCount: requests.length,
             itemBuilder: (context, index) {
               final request = requests[index];
@@ -121,11 +123,13 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
   }
 
   Widget _buildRequestCard(Map<String, dynamic> request) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: EdgeInsets.only(bottom: screenHeight * 0.02),  // 2% margin
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -138,7 +142,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(screenWidth * 0.05),  // 5% padding
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -147,7 +151,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
               children: [
                 // User Avatar
                 CircleAvatar(
-                  radius: 30,
+                  radius: screenWidth * 0.075,  // 7.5% radius
                   backgroundColor: colorScheme.primary,
                   child: Text(
                     (request['userName'] as String?)
@@ -160,7 +164,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: screenWidth * 0.04),  // 4% gap
                 // User Details
                 Expanded(
                   child: Column(
@@ -173,23 +177,26 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                           color: colorScheme.onSurface,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: screenHeight * 0.005),  // 0.5% gap
                       if (request['userEmail'] != null &&
                           request['userEmail'].isNotEmpty)
                         _buildDetailRow(
                           icon: Icons.email_outlined,
                           text: request['userEmail'],
+                          screenWidth: screenWidth,
                         ),
                       if (request['userAge'] != null)
                         _buildDetailRow(
                           icon: Icons.cake_outlined,
                           text: '${request['userAge']} years old',
+                          screenWidth: screenWidth,
                         ),
                       if (request['userOccupation'] != null &&
                           request['userOccupation'].isNotEmpty)
                         _buildDetailRow(
                           icon: Icons.work_outline,
                           text: request['userOccupation'],
+                          screenWidth: screenWidth,
                         ),
                     ],
                   ),
@@ -197,11 +204,11 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
               ],
             ),
 
-            const SizedBox(height: 16),
+            SizedBox(height: screenHeight * 0.02),  // 2% gap
 
             // Request Time
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03, vertical: screenHeight * 0.007),  // Dynamic padding
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
@@ -211,10 +218,10 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                 children: [
                   Icon(
                     Icons.schedule,
-                    size: 16,
+                    size: screenWidth * 0.04,  // 4% icon
                     color: colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: screenWidth * 0.015),  // 1.5% gap
                   Text(
                     'Requested ${_formatTimeAgo(request['requestedAt'])}',
                     style: textTheme.labelSmall?.copyWith(
@@ -226,7 +233,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
               ),
             ),
 
-            const SizedBox(height: 20),
+            SizedBox(height: screenHeight * 0.025),  // 2.5% gap
 
             // Action Buttons
             Row(
@@ -237,7 +244,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: colorScheme.error,
                       side: BorderSide(color: colorScheme.error),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: EdgeInsets.symmetric(vertical: screenHeight * 0.015),  // 1.5% vertical
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -251,14 +258,14 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: screenWidth * 0.03),  // 3% gap
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => _approveRequest(request),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: colorScheme.primary,
                       foregroundColor: colorScheme.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: EdgeInsets.symmetric(vertical: screenHeight * 0.015),  // 1.5% vertical
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -281,17 +288,21 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
     );
   }
 
-  Widget _buildDetailRow({required IconData icon, required String text}) {
+  Widget _buildDetailRow({
+    required IconData icon, 
+    required String text,
+    required double screenWidth,
+  }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
+      padding: EdgeInsets.only(bottom: screenWidth * 0.01),  // 1% padding
       child: Row(
         children: [
-          Icon(icon, size: 16, color: colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
+          Icon(icon, size: screenWidth * 0.04, color: colorScheme.onSurfaceVariant),  // 4% icon
+          SizedBox(width: screenWidth * 0.015),  // 1.5% gap
           Expanded(
             child: Text(
               text,

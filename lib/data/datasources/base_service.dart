@@ -3,13 +3,13 @@
 abstract class BaseService {
   /// Initialize the service
   Future<void> initialize();
-  
+
   /// Dispose resources
   Future<void> dispose();
-  
+
   /// Check if service is initialized
   bool get isInitialized;
-  
+
   /// Service name for debugging
   String get serviceName;
 }
@@ -19,10 +19,10 @@ abstract class BaseService {
 abstract class BaseNetworkService extends BaseService {
   /// Check if network is available
   Future<bool> get isNetworkAvailable;
-  
+
   /// Set timeout duration
   void setTimeout(Duration timeout);
-  
+
   /// Get current timeout
   Duration get timeout;
 }
@@ -32,45 +32,39 @@ abstract class BaseNetworkService extends BaseService {
 abstract class BaseCacheService extends BaseService {
   /// Clear all cache
   Future<void> clearCache();
-  
+
   /// Clear specific cache by key
   Future<void> clearCacheByKey(String key);
-  
+
   /// Check if cache exists for key
   Future<bool> hasCacheForKey(String key);
-  
+
   /// Get cache size
   Future<int> getCacheSize();
 }
 
 /// Service Status
-enum ServiceStatus {
-  uninitialized,
-  initializing,
-  initialized,
-  error,
-  disposed,
-}
+enum ServiceStatus { uninitialized, initializing, initialized, error, disposed }
 
 /// Base Service Implementation
 /// Provides common functionality for services
 abstract class BaseServiceImpl implements BaseService {
   ServiceStatus _status = ServiceStatus.uninitialized;
   String? _errorMessage;
-  
+
   @override
   bool get isInitialized => _status == ServiceStatus.initialized;
-  
+
   ServiceStatus get status => _status;
   String? get errorMessage => _errorMessage;
-  
+
   @override
   Future<void> initialize() async {
     if (_status == ServiceStatus.initialized) return;
-    
+
     _status = ServiceStatus.initializing;
     _errorMessage = null;
-    
+
     try {
       await onInitialize();
       _status = ServiceStatus.initialized;
@@ -80,11 +74,11 @@ abstract class BaseServiceImpl implements BaseService {
       rethrow;
     }
   }
-  
+
   @override
   Future<void> dispose() async {
     if (_status == ServiceStatus.disposed) return;
-    
+
     try {
       await onDispose();
       _status = ServiceStatus.disposed;
@@ -94,13 +88,13 @@ abstract class BaseServiceImpl implements BaseService {
       rethrow;
     }
   }
-  
+
   /// Override this method to implement service-specific initialization
   Future<void> onInitialize();
-  
+
   /// Override this method to implement service-specific disposal
   Future<void> onDispose();
-  
+
   /// Check if service is ready to use
   void ensureInitialized() {
     if (!isInitialized) {

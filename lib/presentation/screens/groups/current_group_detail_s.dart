@@ -1,3 +1,5 @@
+// ignore_for_file: no_leading_underscores_for_local_identifiers
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -53,23 +55,46 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
       return [];
     }
 
-    final membersQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .where(FieldPath.documentId, whereIn: memberIds)
-        .get();
+    final List<Map<String, dynamic>> membersList = [];
 
-    final membersList = membersQuery.docs
-        .map((doc) => {'id': doc.id, ...doc.data()})
-        .toList();
-    debugPrint('Fetched members data: $membersList');
+    // Fetch each member individually to ensure we get all data
+    for (final memberId in memberIds) {
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(memberId)
+            .get();
+
+        final Map<String, dynamic> memberData = {'id': memberId};
+
+        if (userDoc.exists && userDoc.data() != null) {
+          // Merge Firestore data
+          memberData.addAll(userDoc.data()!);
+        }
+
+        // No fallback to Firebase Auth displayName - only use Firestore data
+        // If username is still empty after fetching from Firestore, it will be handled by _formatMemberDisplayName
+
+        debugPrint('Fetched member $memberId: username=${memberData['username']}, name=${memberData['name']}, email=${memberData['email']}');
+        membersList.add(memberData);
+      } catch (e) {
+        debugPrint('Error fetching member $memberId: $e');
+        // Add member with just ID as fallback
+        membersList.add({'id': memberId});
+      }
+    }
+
+    debugPrint('Total members fetched: ${membersList.length}');
     return membersList;
   }
 
   Future<void> _checkFollowingStatus(List<Map<String, dynamic>> members) async {
     for (var member in members) {
       if (member['id'] != _currentUserId) {
-        final isFollowing =
-            await _firestoreService.isFollowing(_currentUserId, member['id']);
+        final isFollowing = await _firestoreService.isFollowing(
+          _currentUserId,
+          member['id'],
+        );
         if (mounted) {
           setState(() {
             _followingStatus[member['id']] = isFollowing;
@@ -99,6 +124,45 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
         });
       }
     }
+  }
+
+  String _formatMemberDisplayName(
+    Map<String, dynamic> member,
+    bool isCurrentUser,
+  ) {
+    String? _firstNonEmpty(List<dynamic> candidates) {
+      for (final value in candidates) {
+        if (value is String && value.trim().isNotEmpty) {
+          return value.trim();
+        }
+      }
+      return null;
+    }
+
+    final name = _firstNonEmpty([
+      member['username'],
+      member['name'],
+      member['displayName'],
+      member['userName'],
+      member['fullName'],
+    ]);
+
+    final email = member['email'];
+    final emailPrefix =
+        email is String && email.trim().isNotEmpty
+            ? email.trim().split('@').first
+            : null;
+
+    final phone = member['phone'];
+    final phoneValue =
+        phone is String && phone.trim().isNotEmpty ? phone.trim() : null;
+
+    final fallback = name ?? emailPrefix ?? phoneValue ?? 'Member';
+
+    if (isCurrentUser) {
+      return '$fallback (You)';
+    }
+    return fallback;
   }
 
   String _formatTimestamp(Timestamp? timestamp) {
@@ -170,8 +234,9 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                   widget.onLeaveGroup!();
                 }
                 Navigator.of(context).pop(); // Close the dialog
-                Navigator.of(context)
-                    .pop(); // Go back from the group detail screen
+                Navigator.of(
+                  context,
+                ).pop(); // Go back from the group detail screen
               },
             ),
           ],
@@ -185,6 +250,9 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
     final List<String> images = List<String>.from(widget.group['images'] ?? []);
     final bool hasImages = images.isNotEmpty;
     final dynamic rentRaw = widget.group['rent'];
@@ -216,7 +284,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 280.0,
+            expandedHeight: screenHeight * 0.35,  // 35% of screen height
             backgroundColor: colorScheme.surface,
             elevation: 0,
             pinned: true,
@@ -237,17 +305,18 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
           ),
           SliverToBoxAdapter(
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(screenWidth * 0.05),  // 5% padding
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Expanded(
                         child: Text(
                           widget.group['name'] ?? 'Unnamed Group',
-                          style: textTheme.headlineSmall?.copyWith(
+                          style:
+                              textTheme.headlineSmall?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.onSurface,
                               ) ??
@@ -258,11 +327,11 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                               ),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: screenWidth * 0.04),  // 4% gap
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.03,
+                          vertical: screenHeight * 0.007,
                         ),
                         decoration: BoxDecoration(
                           color: colorScheme.secondaryContainer,
@@ -284,7 +353,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   Text(
                     widget.group['description'] ?? 'No description available.',
                     style:
@@ -298,16 +367,16 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                           height: 1.5,
                         ),
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: screenHeight * 0.03),  // 3% gap
                   Divider(height: 1, color: colorScheme.outlineVariant),
-                  const SizedBox(height: 24),
+                  SizedBox(height: screenHeight * 0.03),  // 3% gap
                   _buildFullWidthInfoCard(
                     icon: Icons.location_on_outlined,
                     title: 'Location',
                     value: widget.group['location'] ?? 'Not specified',
                     color: colorScheme.primary,
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   Row(
                     children: [
                       Expanded(
@@ -318,7 +387,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                           color: colorScheme.primary,
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: screenWidth * 0.04),  // 4% gap
                       Expanded(
                         child: _buildInfoCard(
                           icon: Icons.account_balance_wallet_outlined,
@@ -329,7 +398,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   Row(
                     children: [
                       Expanded(
@@ -340,7 +409,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                           color: colorScheme.tertiary,
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: screenWidth * 0.04),  // 4% gap
                       Expanded(
                         child: _buildInfoCard(
                           icon: Icons.home_outlined,
@@ -351,7 +420,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),  // 2% gap
                   _buildInfoCard(
                     icon: Icons.calendar_today_outlined,
                     title: 'Created On',
@@ -360,7 +429,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                     ),
                     color: colorScheme.tertiary,
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: screenHeight * 0.03),  // 3% gap
                   if (widget.group['amenities'] != null &&
                       (widget.group['amenities'] as List).isNotEmpty) ...[
                     Text(
@@ -376,11 +445,11 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                             color: colorScheme.onSurface,
                           ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: screenHeight * 0.015),  // 1.5% gap
                     _buildAmenitiesGrid(
                       List<String>.from(widget.group['amenities']),
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: screenHeight * 0.03),  // 3% gap
                   ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -402,55 +471,39 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          GestureDetector(
-                            onTap: () {
+                          IconButton(
+                            onPressed: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => JoinRequestsScreen(
-                                    group: widget.group,
-                                  ),
+                                  builder:
+                                      (context) => JoinRequestsScreen(
+                                        group: widget.group,
+                                      ),
                                 ),
                               );
                             },
-                            child: Image.asset(
-                              'assets/icons/manage_request.png',
-                              width: 24,
-                              height: 24,
-                              errorBuilder: (context, error, stack) => SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: Icon(
-                                  Icons.image_not_supported,
-                                  size: 18,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
+                            icon: Icon(
+                              Icons.person_add_outlined,
+                              size: screenWidth * 0.065,
+                              color: colorScheme.primary,
                             ),
+                            tooltip: 'Manage Requests',
                           ),
-                          const SizedBox(width: 12),
-                          GestureDetector(
-                            onTap: _showLeaveGroupDialog,
-                            child: Image.asset(
-                              'assets/icons/leave_group.png',
-                              width: 30,
-                              height: 30,
-                              errorBuilder: (context, error, stack) => SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: Icon(
-                                  Icons.image_not_supported,
-                                  size: 18,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
+                          IconButton(
+                            onPressed: _showLeaveGroupDialog,
+                            icon: Icon(
+                              Icons.logout_outlined,
+                              size: screenWidth * 0.065,
+                              color: colorScheme.error,
                             ),
+                            tooltip: 'Leave Group',
                           ),
                         ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: screenHeight * 0.015),  // 1.5% gap
                   _buildMembersSection(),
                 ],
               ),
@@ -462,6 +515,8 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
   }
 
   Widget _buildImageSlider(List<String> images) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     return Stack(
       children: [
@@ -485,16 +540,16 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
         ),
         if (images.length > 1)
           Positioned(
-            bottom: 10,
+            bottom: screenHeight * 0.012,  // 1.2% from bottom
             left: 0,
             right: 0,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(images.length, (index) {
                 return Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: screenWidth * 0.02,  // 2% width
+                  height: screenWidth * 0.02,  // 2% height (keep square)
+                  margin: EdgeInsets.symmetric(horizontal: screenWidth * 0.01),  // 1% margin
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color:
@@ -511,29 +566,28 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
   }
 
   Widget _buildPlaceholderImage() {
+    final screenWidth = MediaQuery.of(context).size.width;
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       color: colorScheme.surfaceContainerHighest,
       child: Center(
-        child: Icon(
-          Icons.group,
-          color: colorScheme.onSurfaceVariant,
-          size: 60,
-        ),
+        child: Icon(Icons.group, color: colorScheme.onSurfaceVariant, size: screenWidth * 0.15),  // 15% icon
       ),
     );
   }
 
   Widget _buildAmenitiesGrid(List<String> amenities) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: screenWidth * 0.02,  // 2% spacing
+      runSpacing: screenHeight * 0.01,  // 1% run spacing
       children:
           amenities.map((amenity) {
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03, vertical: screenHeight * 0.007),  // Dynamic padding
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(16),
@@ -561,6 +615,8 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _membersFuture,
       builder: (context, snapshot) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
         final textTheme = theme.textTheme;
@@ -573,9 +629,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
           return Center(
             child: Text(
               'Error: ${snapshot.error}',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.error,
-              ),
+              style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
             ),
           );
         }
@@ -592,110 +646,120 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
 
         final members = snapshot.data!;
         return Column(
-          children: members.map((member) {
-            final isCreator = member['uid'] == widget.group['createdBy'];
-            final isCurrentUser = member['id'] == _currentUserId;
-            final isFollowing = _followingStatus[member['id']] ?? false;
+          children:
+              members.map((member) {
+                final isCreator = member['uid'] == widget.group['createdBy'];
+                final isCurrentUser = member['id'] == _currentUserId;
+                final isFollowing = _followingStatus[member['id']] ?? false;
 
-            debugPrint(
-                'Building member item: ${member['name']}, isCurrentUser: $isCurrentUser, isCreator: $isCreator');
+                debugPrint(
+                  'Building member item: ${member['name']}, isCurrentUser: $isCurrentUser, isCreator: $isCreator',
+                );
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                color: colorScheme.surface.withValues(alpha: 0),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ListTile(
-                onTap: () async {
-                  if (!isCurrentUser) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => OtherUserProfileScreen(
-                          userId: member['id'],
-                        ),
-                      ),
-                    );
-                    // Refresh following status when returning
-                    _refreshFollowingStatus();
-                  }
-                },
-                contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                leading: CircleAvatar(
-                  radius: 20,
-                  backgroundColor: colorScheme.surfaceContainerHighest,
-                  backgroundImage: member['profileImageUrl'] != null
-                      ? NetworkImage(member['profileImageUrl'])
-                      : null,
-                  child: member['profileImageUrl'] == null
-                      ? Icon(
-                          Icons.person,
-                          color: colorScheme.onSurfaceVariant,
-                        )
-                      : null,
-                ),
-                title: Text(
-                  member['name'] ?? 'Unnamed Member',
-                  style: textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                      ) ??
-                      const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                trailing: isCurrentUser
-                    ? Text(
-                        'You',
-                        style: textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ) ??
-                            TextStyle(color: colorScheme.onSurfaceVariant),
-                      )
-                    : isCreator
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              'Admin',
-                              style: textTheme.labelSmall?.copyWith(
-                                    color: colorScheme.primary,
-                                    fontWeight: FontWeight.w500,
-                                  ) ??
-                                  TextStyle(
-                                    color: colorScheme.primary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                            ),
-                          )
-                        : (!isFollowing
-                            ? ElevatedButton(
-                                onPressed: () => _toggleFollow(member['id']),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: colorScheme.primary,
-                                  foregroundColor: colorScheme.onPrimary,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 2,
-                                  ),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  minimumSize: const Size(0, 30),
+                return Container(
+                  margin: EdgeInsets.only(bottom: screenHeight * 0.01),  // 1% margin
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface.withValues(alpha: 0),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListTile(
+                    onTap: () async {
+                      if (!isCurrentUser) {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (context) => OtherUserProfileScreen(
+                                  userId: member['id'],
                                 ),
-                                child: const Text('Follow'),
+                          ),
+                        );
+                        // Refresh following status when returning
+                        _refreshFollowingStatus();
+                      }
+                    },
+                    contentPadding: EdgeInsets.fromLTRB(
+                      screenWidth * 0.04,  // 4% left
+                      screenHeight * 0.005,  // 0.5% top
+                      screenWidth * 0.04,  // 4% right
+                      screenHeight * 0.005,  // 0.5% bottom
+                    ),
+                    leading: CircleAvatar(
+                      radius: screenWidth * 0.05,  // 5% radius
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      backgroundImage:
+                          member['profileImageUrl'] != null
+                              ? NetworkImage(member['profileImageUrl'])
+                              : null,
+                      child:
+                          member['profileImageUrl'] == null
+                              ? Icon(
+                                Icons.person,
+                                color: colorScheme.onSurfaceVariant,
                               )
-                            : const SizedBox.shrink()),
-              ),
-            );
-          }).toList(),
+                              : null,
+                    ),
+                    title: Text(
+                      _formatMemberDisplayName(member, isCurrentUser),
+                      style:
+                          textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                          ) ??
+                          const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    trailing:
+                        isCreator
+                            ? Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: screenWidth * 0.02,  // 2% horizontal
+                                vertical: screenHeight * 0.005,  // 0.5% vertical
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.withValues(
+                                  alpha: 0.12,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Admin',
+                                style:
+                                    textTheme.labelSmall?.copyWith(
+                                      color: colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ) ??
+                                    TextStyle(
+                                      color: colorScheme.primary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                              ),
+                            )
+                            : (isCurrentUser
+                                ? null // No trailing widget for current user (already has "You" in title)
+                                : (!isFollowing
+                                    ? ElevatedButton(
+                                      onPressed: () => _toggleFollow(member['id']),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: colorScheme.primary,
+                                        foregroundColor: colorScheme.onPrimary,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: screenWidth * 0.04,  // 4% horizontal
+                                          vertical: screenHeight * 0.002,  // 0.2% vertical
+                                        ),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        minimumSize: Size(0, screenHeight * 0.037),  // 3.7% height
+                                      ),
+                                      child: const Text('Follow'),
+                                    )
+                                    : const SizedBox.shrink())),
+                  ),
+                );
+              }).toList(),
         );
       },
     );
@@ -707,10 +771,12 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
     required String value,
     required Color color,
   }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(screenWidth * 0.04),  // 4% padding
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
@@ -726,8 +792,8 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 12),
+          Icon(icon, color: color, size: screenWidth * 0.055),  // 5.5% icon
+          SizedBox(width: screenWidth * 0.03),  // 3% gap
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -745,7 +811,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                         fontWeight: FontWeight.w500,
                       ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: screenHeight * 0.005),  // 0.5% gap
                 Text(
                   value,
                   style:
@@ -773,10 +839,12 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
     required String value,
     required Color color,
   }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(screenWidth * 0.04),  // 4% padding
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
@@ -795,8 +863,8 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(width: 8),
+              Icon(icon, color: color, size: screenWidth * 0.055),  // 5.5% icon
+              SizedBox(width: screenWidth * 0.02),  // 2% gap
               Text(
                 title,
                 style:
@@ -812,7 +880,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: screenHeight * 0.01),  // 1% gap
           Text(
             value,
             style:

@@ -105,7 +105,7 @@ class RoomieFullScreenLoading extends StatelessWidget {
     return PopScope(
       canPop: canDismiss,
       child: Container(
-  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
         child: RoomieLoadingWidget(size: 120, text: text, showText: true),
       ),
     );

@@ -103,14 +103,16 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
-  final colorScheme = theme.colorScheme;
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
           child: Form(
             // Wrap in Form to use GlobalKey
             key: _formKey,
@@ -119,7 +121,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
               children: [
                 // Header Section
                 Padding(
-                  padding: const EdgeInsets.only(top: 24.0, bottom: 32.0),
+                  padding: EdgeInsets.only(top: screenHeight * 0.03, bottom: screenHeight * 0.04),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -134,22 +136,22 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                                   (route) => false,
                                 ),
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: EdgeInsets.all(screenWidth * 0.02),
                               decoration: BoxDecoration(
-                                    color: colorScheme.surface,
+                                color: colorScheme.surface,
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                        color: colorScheme.onSurface.withAlpha(25),
+                                    color: colorScheme.onSurface.withAlpha(25),
                                     blurRadius: 4,
                                     offset: const Offset(0, 2),
                                   ),
                                 ],
                               ),
-                                  child: Icon(
+                              child: Icon(
                                 Icons.arrow_back_ios_new,
-                                size: 18,
-                                    color: colorScheme.onSurface,
+                                size: screenWidth * 0.045,
+                                color: colorScheme.onSurface,
                               ),
                             ),
                           ),
@@ -166,7 +168,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                             ),
                           ),
                           SizedBox(
-                            width: 40,
+                            width: screenWidth * 0.1,
                           ), // To balance the back button space
                         ],
                       ),
@@ -181,9 +183,9 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                       children: [
                         // Profile Photo uploader
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: screenWidth * 0.04,
+                            vertical: screenHeight * 0.02,
                           ),
                           child: GestureDetector(
                             onTap: _pickProfileImage,
@@ -191,21 +193,22 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                               children: [
                                 _profileImageFile == null
                                     ? Container(
-                                      height: 60,
-                                      width: 60,
+                                      height: screenWidth * 0.15,
+                                      width: screenWidth * 0.15,
                                       decoration: BoxDecoration(
-                                        color: colorScheme.surfaceContainerHighest,
+                                        color:
+                                            colorScheme.surfaceContainerHighest,
                                         shape: BoxShape.circle,
                                       ),
                                       child: Icon(
                                         Icons.person_outline,
                                         color: colorScheme.primary,
-                                        size: 28,
+                                        size: screenWidth * 0.07,
                                       ),
                                     )
                                     : Container(
-                                      height: 60,
-                                      width: 60,
+                                      height: screenWidth * 0.15,
+                                      width: screenWidth * 0.15,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         image: DecorationImage(
@@ -214,7 +217,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                                         ),
                                       ),
                                     ),
-                                SizedBox(width: 16),
+                                SizedBox(width: screenWidth * 0.04),
                                 Text(
                                   _profileImageFile == null
                                       ? 'Add profile photo'
@@ -232,16 +235,16 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
 
                         // Username field
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: screenWidth * 0.04,
+                            vertical: screenHeight * 0.008,
                           ),
                           child: TextFormField(
                             controller: _usernameController,
                             decoration: InputDecoration(
                               hintText: 'Username',
                               filled: true,
-                                fillColor: colorScheme.surfaceContainerHighest,
+                              fillColor: colorScheme.surfaceContainerHighest,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(16),
                                 borderSide: BorderSide.none,
@@ -253,7 +256,9 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                                   width: 2,
                                 ),
                               ),
-                                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                              hintStyle: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                               contentPadding: EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 18,
@@ -270,16 +275,16 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
 
                         // Occupation field
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: screenWidth * 0.04,
+                            vertical: screenHeight * 0.008,
                           ),
                           child: TextFormField(
                             controller: _occupationController,
                             decoration: InputDecoration(
                               hintText: 'Occupation',
                               filled: true,
-                                fillColor: colorScheme.surfaceContainerHighest,
+                              fillColor: colorScheme.surfaceContainerHighest,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(16),
                                 borderSide: BorderSide.none,
@@ -291,7 +296,9 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                                   width: 2,
                                 ),
                               ),
-                                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                              hintStyle: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                               contentPadding: EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 18,
@@ -302,9 +309,9 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
 
                         // Age field
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: screenWidth * 0.04,
+                            vertical: screenHeight * 0.008,
                           ),
                           child: TextFormField(
                             controller: _ageController,
@@ -312,7 +319,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                             decoration: InputDecoration(
                               hintText: 'Age',
                               filled: true,
-                                fillColor: colorScheme.surfaceContainerHighest,
+                              fillColor: colorScheme.surfaceContainerHighest,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(16),
                                 borderSide: BorderSide.none,
@@ -324,7 +331,9 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                                   width: 2,
                                 ),
                               ),
-                                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                              hintStyle: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                               contentPadding: EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 18,
@@ -344,17 +353,17 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
 
                         // Bio field
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: screenWidth * 0.04,
+                            vertical: screenHeight * 0.008,
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 4,
-                                  bottom: 8,
+                                padding: EdgeInsets.only(
+                                  left: screenWidth * 0.01,
+                                  bottom: screenHeight * 0.01,
                                 ),
                                 child: Text(
                                   'Bio (Optional)',
@@ -371,7 +380,8 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                                 decoration: InputDecoration(
                                   hintText: 'Tell us about yourself...',
                                   filled: true,
-                                  fillColor: colorScheme.surfaceContainerHighest,
+                                  fillColor:
+                                      colorScheme.surfaceContainerHighest,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
                                     borderSide: BorderSide.none,
@@ -396,7 +406,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                           ),
                         ),
 
-                        SizedBox(height: 24),
+                        SizedBox(height: screenHeight * 0.03),
                       ],
                     ),
                   ),
@@ -404,20 +414,22 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
 
                 // Next button
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: screenWidth * 0.04,
+                    vertical: screenHeight * 0.015,
                   ),
                   child: SizedBox(
                     width: double.infinity,
-                    height: 48,
+                    height: screenHeight * 0.06,
                     child:
                         _isLoading
                             ? Center(
-                                child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  colorScheme.primary,
                                 ),
-                              )
+                              ),
+                            )
                             : ElevatedButton(
                               onPressed: _saveUserDetails,
                               style: ElevatedButton.styleFrom(
@@ -439,7 +451,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                             ),
                   ),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: screenHeight * 0.01),
               ],
             ),
           ),

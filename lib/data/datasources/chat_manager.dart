@@ -84,15 +84,15 @@ class ChatManager {
   Future<List<BaseChat>> getAllChats() async {
     try {
       final chatsList = <BaseChat>[];
-      
+
       // Get individual chats
       final individualChats = await _getIndividualChats();
       chatsList.addAll(individualChats);
-      
+
       // Get group chats
       final groupChats = await _getGroupChats();
       chatsList.addAll(groupChats);
-      
+
       // Sort by last message time
       chatsList.sort((a, b) {
         if (a.lastMessageTime == null && b.lastMessageTime == null) return 0;
@@ -127,10 +127,7 @@ class ChatManager {
     required String message,
   }) async {
     try {
-      await _chatService.sendMessage(
-        chatId: chat.id,
-        message: message,
-      );
+      await _chatService.sendMessage(chatId: chat.id, message: message);
     } catch (e) {
       throw Exception('Failed to send message: $e');
     }
@@ -171,7 +168,7 @@ class ChatManager {
   /// Search chats
   List<BaseChat> searchChats(List<BaseChat> chats, String query) {
     if (query.isEmpty) return chats;
-    
+
     return chats.where((chat) {
       return chat.getChatTitle().toLowerCase().contains(query.toLowerCase());
     }).toList();
@@ -195,7 +192,7 @@ class ChatUtils {
   static String formatChatTime(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
+
     if (difference.inDays > 0) {
       return '${difference.inDays}d';
     } else if (difference.inHours > 0) {
@@ -213,18 +210,22 @@ class ChatUtils {
   }
 
   /// Get chat preview text
-  static String getChatPreview(String? lastMessage, String? lastSenderId, String currentUserId) {
+  static String getChatPreview(
+    String? lastMessage,
+    String? lastSenderId,
+    String currentUserId,
+  ) {
     if (lastMessage == null || lastMessage.isEmpty) {
       return 'No messages yet';
     }
-    
+
     final isFromCurrentUser = lastSenderId == currentUserId;
     final prefix = isFromCurrentUser ? 'You: ' : '';
-    
+
     if (lastMessage.length > 50) {
       return '$prefix${lastMessage.substring(0, 50)}...';
     }
-    
+
     return '$prefix$lastMessage';
   }
 }

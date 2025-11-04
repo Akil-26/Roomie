@@ -55,8 +55,10 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
   }
 
   Future<void> _checkIfFollowing() async {
-    final isFollowing =
-        await _firestoreService.isFollowing(_currentUserId, widget.userId);
+    final isFollowing = await _firestoreService.isFollowing(
+      _currentUserId,
+      widget.userId,
+    );
     if (mounted) {
       setState(() {
         _isFollowing = isFollowing;
@@ -115,42 +117,42 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
 
   Future<void> _openChat() async {
     if (_user == null) return;
-    
+
     try {
       // Create or get existing individual chat using ChatManager
       final individualChat = await _chatManager.createOrGetIndividualChat(
         otherUserId: widget.userId,
-        otherUserName: _user!.name ?? 'Unknown User',
+        otherUserName: _user!.displayName,
         otherUserImageUrl: _user!.profileImageUrl,
       );
-      
+
       // Prepare chat data for individual chat
       final chatData = {
         'id': individualChat.id,
-        'name': _user!.name ?? 'Unknown User',
+        'name': _user!.displayName,
         'otherUserId': widget.userId,
-        'otherUserName': _user!.name ?? 'Unknown User',
+        'otherUserName': _user!.displayName,
         'profileImageUrl': _user!.profileImageUrl,
         'otherUserImageUrl': _user!.profileImageUrl,
-        'imageUrl': _user!.profileImageUrl, // For compatibility with messages page
+        'imageUrl':
+            _user!.profileImageUrl, // For compatibility with messages page
         'email': _user!.email,
         'userData': {
-          'name': _user!.name ?? 'Unknown User',
+          'name': _user!.displayName,
           'profileImageUrl': _user!.profileImageUrl,
           'email': _user!.email,
           'uid': widget.userId,
         },
       };
-      
+
       // Navigate to chat screen
       if (mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ChatScreen(
-              chatData: chatData,
-              chatType: 'individual',
-            ),
+            builder:
+                (context) =>
+                    ChatScreen(chatData: chatData, chatType: 'individual'),
           ),
         );
       }
@@ -171,6 +173,8 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -185,7 +189,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          _user?.name ?? 'Profile',
+          _user?.displayName ?? 'Profile',
           style: textTheme.titleMedium?.copyWith(
             color: colorScheme.onSurface,
             fontWeight: FontWeight.bold,
@@ -193,137 +197,153 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
         ),
         centerTitle: true,
       ),
-      body: _isLoading
-          ? Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-              ),
-            )
-          : _user == null
+      body:
+          _isLoading
+              ? Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    colorScheme.primary,
+                  ),
+                ),
+              )
+              : _user == null
               ? const Center(child: Text('User not found.'))
               : SingleChildScrollView(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      CircleAvatar(
-                        radius: 60,
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        backgroundImage: _user!.profileImageUrl != null
-                            ? NetworkImage(_user!.profileImageUrl!)
-                            : null,
-                        child: _user!.profileImageUrl == null
-                          ? Icon(Icons.person, size: 60, color: colorScheme.onSurfaceVariant)
-                          : null,
+                padding: EdgeInsets.all(screenWidth * 0.05),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: screenWidth * 0.15,
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      backgroundImage:
+                          _user!.profileImageUrl != null
+                              ? NetworkImage(_user!.profileImageUrl!)
+                              : null,
+                      child:
+                          _user!.profileImageUrl == null
+                              ? Icon(
+                                Icons.person,
+                                size: screenWidth * 0.15,
+                                color: colorScheme.onSurfaceVariant,
+                              )
+                              : null,
+                    ),
+                    SizedBox(height: screenHeight * 0.025),
+                    Text(
+                      _user!.displayName,
+                      style: textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
                       ),
-                      const SizedBox(height: 20),
-                      Text(
-                        _user!.name ?? 'No Name',
-                        style: textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSurface,
+                    ),
+                    SizedBox(height: screenHeight * 0.01),
+                    Text(
+                      _user!.bio ?? 'No bio available.',
+                      textAlign: TextAlign.center,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    SizedBox(height: screenHeight * 0.03),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildFollowerInfo('Followers', _followersCount),
+                        Container(
+                          height: screenHeight * 0.05,
+                          width: 1,
+                          color: colorScheme.outlineVariant,
+                          margin: EdgeInsets.symmetric(horizontal: screenWidth * 0.06),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _user!.bio ?? 'No bio available.',
-                        textAlign: TextAlign.center,
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
+                        _buildFollowerInfo('Following', _followingCount),
+                      ],
+                    ),
+                    SizedBox(height: screenHeight * 0.03),
+                    if (widget.userId != _currentUserId)
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _buildFollowerInfo('Followers', _followersCount),
-                          Container(
-                            height: 40,
-                            width: 1,
-                            color: colorScheme.outlineVariant,
-                            margin: const EdgeInsets.symmetric(horizontal: 24),
-                          ),
-                          _buildFollowerInfo('Following', _followingCount),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      if (widget.userId != _currentUserId)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _isProcessingFollow
-                                    ? null
-                                    : _toggleFollow,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _isFollowing
-                                      ? colorScheme.surfaceContainerHighest
-                                      : colorScheme.primary,
-                                  foregroundColor: _isFollowing
-                                      ? colorScheme.onSurface
-                                      : colorScheme.onPrimary,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  elevation: 0,
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed:
+                                  _isProcessingFollow ? null : _toggleFollow,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    _isFollowing
+                                        ? colorScheme.surfaceContainerHighest
+                                        : colorScheme.primary,
+                                foregroundColor:
+                                    _isFollowing
+                                        ? colorScheme.onSurface
+                                        : colorScheme.onPrimary,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                child: _isProcessingFollow
-                  ? SizedBox(
-                                        height: 20,
-                                        width: 20,
+                                padding: EdgeInsets.symmetric(
+                                  vertical: screenHeight * 0.017,
+                                ),
+                                elevation: 0,
+                              ),
+                              child:
+                                  _isProcessingFollow
+                                      ? SizedBox(
+                                        height: screenWidth * 0.05,
+                                        width: screenWidth * 0.05,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
                                           valueColor:
                                               AlwaysStoppedAnimation<Color>(
-                                                  colorScheme.onPrimary),
-                                        ))
-                                    : Text(
+                                                colorScheme.onPrimary,
+                                              ),
+                                        ),
+                                      )
+                                      : Text(
                                         _isFollowing ? 'Unfollow' : 'Follow',
                                         style: textTheme.titleMedium?.copyWith(
                                           fontWeight: FontWeight.bold,
-                                          color: _isFollowing
-                                              ? colorScheme.onSurface
-                                              : colorScheme.onPrimary,
+                                          color:
+                                              _isFollowing
+                                                  ? colorScheme.onSurface
+                                                  : colorScheme.onPrimary,
                                         ),
                                       ),
-                              ),
                             ),
-                            if (_isFollowing) ...[
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: _openChat,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: colorScheme.secondary,
-                                    foregroundColor: colorScheme.onSecondary,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 14),
-                                    elevation: 0,
+                          ),
+                          if (_isFollowing) ...[
+                            SizedBox(width: screenWidth * 0.04),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _openChat,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: colorScheme.secondary,
+                                  foregroundColor: colorScheme.onSecondary,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: Text(
-                                    'Message',
-                                    style: textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: colorScheme.onSecondary,
-                                    ),
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: screenHeight * 0.017,
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: Text(
+                                  'Message',
+                                  style: textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: colorScheme.onSecondary,
                                   ),
                                 ),
                               ),
-                            ]
+                            ),
                           ],
-                        ),
-                      const SizedBox(height: 32),
-                      const Divider(),
-                      const SizedBox(height: 16),
-                      _buildInfoSection(),
-                    ],
-                  ),
+                        ],
+                      ),
+                    SizedBox(height: screenHeight * 0.04),
+                    const Divider(),
+                    SizedBox(height: screenHeight * 0.02),
+                    _buildInfoSection(),
+                  ],
                 ),
+              ),
     );
   }
 
@@ -353,6 +373,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
   }
 
   Widget _buildInfoSection() {
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -367,10 +388,9 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
             color: colorScheme.onSurface,
           ),
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: screenHeight * 0.02),
         if (_user?.occupation != null) ...[
-          _buildInfoRow(
-              Icons.work_outline, 'Occupation', _user!.occupation!),
+          _buildInfoRow(Icons.work_outline, 'Occupation', _user!.occupation!),
           const Divider(height: 32),
         ],
         if (_user?.age != null) ...[
@@ -378,24 +398,29 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
           const Divider(height: 32),
         ],
         if (_user?.createdAt != null) ...[
-          _buildInfoRow(Icons.calendar_today_outlined, 'Member Since',
-              '${_user!.createdAt!.toLocal()}'.split(' ')[0]),
+          _buildInfoRow(
+            Icons.calendar_today_outlined,
+            'Member Since',
+            '${_user!.createdAt!.toLocal()}'.split(' ')[0],
+          ),
         ],
       ],
     );
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: EdgeInsets.symmetric(vertical: screenHeight * 0.01),
       child: Row(
         children: [
-          Icon(icon, color: colorScheme.onSurfaceVariant, size: 20),
-          const SizedBox(width: 16),
+          Icon(icon, color: colorScheme.onSurfaceVariant, size: screenWidth * 0.05),
+          SizedBox(width: screenWidth * 0.04),
           Text(
             label,
             style: textTheme.bodyMedium?.copyWith(

@@ -30,12 +30,15 @@ class ChatModel {
       id: id,
       participants: List<String>.from(map['participants'] ?? []),
       participantNames: Map<String, String>.from(map['participantNames'] ?? {}),
-      participantImages: Map<String, String?>.from(map['participantImages'] ?? {}),
+      participantImages: Map<String, String?>.from(
+        map['participantImages'] ?? {},
+      ),
       lastMessage: map['lastMessage'],
       lastSenderId: map['lastSenderId'],
-      lastMessageTime: map['lastMessageTime'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['lastMessageTime'])
-          : null,
+      lastMessageTime:
+          map['lastMessageTime'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(map['lastMessageTime'])
+              : null,
       unreadCounts: Map<String, int>.from(map['unreadCounts'] ?? {}),
       isGroup: map['isGroup'] ?? false,
       groupName: map['groupName'],
@@ -60,7 +63,7 @@ class ChatModel {
 
   String getOtherParticipantName(String currentUserId) {
     if (isGroup) return groupName ?? 'Group Chat';
-    
+
     final otherParticipant = participants.firstWhere(
       (id) => id != currentUserId,
       orElse: () => '',
@@ -70,7 +73,7 @@ class ChatModel {
 
   String? getOtherParticipantImage(String currentUserId) {
     if (isGroup) return groupImageUrl;
-    
+
     final otherParticipant = participants.firstWhere(
       (id) => id != currentUserId,
       orElse: () => '',

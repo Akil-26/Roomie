@@ -19,7 +19,10 @@ class ImageHelper {
                 width: width,
                 height: height,
                 color: colorScheme.surfaceContainerHighest,
-                child: Icon(Icons.image_outlined, color: colorScheme.onSurfaceVariant),
+                child: Icon(
+                  Icons.image_outlined,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               );
             },
           );
@@ -39,7 +42,10 @@ class ImageHelper {
                   width: width,
                   height: height,
                   color: colorScheme.surfaceContainerHighest,
-                  child: Icon(Icons.broken_image, color: colorScheme.onSurfaceVariant),
+                  child: Icon(
+                    Icons.broken_image,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 );
               },
             );
@@ -47,5 +53,4 @@ class ImageHelper {
       // Optional: you could add frameBuilder for fade-in effect
     );
   }
-
 }

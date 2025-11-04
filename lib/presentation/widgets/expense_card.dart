@@ -30,8 +30,10 @@ class ExpenseSummaryCard extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Text('Balance: \$${balance.toStringAsFixed(2)}',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        child: Text(
+          'Balance: \$${balance.toStringAsFixed(2)}',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }

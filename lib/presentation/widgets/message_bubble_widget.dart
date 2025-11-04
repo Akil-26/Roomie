@@ -179,20 +179,21 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    final bubbleColor = widget.isCurrentUser
-        ? colorScheme.primary
-        : colorScheme.surfaceContainer;
-    
-    final textColor = widget.isCurrentUser
-        ? colorScheme.onPrimary
-        : colorScheme.onSurface;
+    final bubbleColor =
+        widget.isCurrentUser
+            ? colorScheme.primary
+            : colorScheme.surfaceContainer;
+
+    final textColor =
+        widget.isCurrentUser ? colorScheme.onPrimary : colorScheme.onSurface;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Column(
-        crossAxisAlignment: widget.isCurrentUser
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
+        crossAxisAlignment:
+            widget.isCurrentUser
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
         children: [
           // Sender info for group messages
           if (widget.isGroup && !widget.isCurrentUser)
@@ -224,7 +225,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                     ),
                   const SizedBox(width: 8),
                   Text(
-                    widget.memberNames[widget.message.senderId]?.trim().isNotEmpty == true
+                    widget.memberNames[widget.message.senderId]
+                                ?.trim()
+                                .isNotEmpty ==
+                            true
                         ? widget.memberNames[widget.message.senderId]!
                         : (widget.message.senderName.trim().isNotEmpty
                             ? widget.message.senderName
@@ -240,13 +244,12 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
 
           // Message bubble
           Row(
-            mainAxisAlignment: widget.isCurrentUser
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
+            mainAxisAlignment:
+                widget.isCurrentUser
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
             children: [
-              if (!widget.isCurrentUser) ...[
-                const SizedBox(width: 48),
-              ],
+              if (!widget.isCurrentUser) ...[const SizedBox(width: 48)],
               Flexible(
                 child: GestureDetector(
                   onLongPress: widget.isCurrentUser ? _toggleOptions : null,
@@ -305,7 +308,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                               Icon(
                                 _getStatusIcon(widget.message.status),
                                 size: 12,
-                                color: _getStatusColor(widget.message.status, colorScheme),
+                                color: _getStatusColor(
+                                  widget.message.status,
+                                  colorScheme,
+                                ),
                               ),
                             ],
                           ],
@@ -315,9 +321,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                   ),
                 ),
               ),
-              if (widget.isCurrentUser) ...[
-                const SizedBox(width: 48),
-              ],
+              if (widget.isCurrentUser) ...[const SizedBox(width: 48)],
             ],
           ),
 
@@ -393,10 +397,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
   Widget _buildTextMessage(Color textColor) {
     return SelectableText(
       widget.message.message,
-      style: TextStyle(
-        color: textColor,
-        fontSize: 16,
-      ),
+      style: TextStyle(color: textColor, fontSize: 16),
     );
   }
 
@@ -433,9 +434,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                 width: 200,
                 height: 200,
                 color: Colors.grey.withOpacity(0.3),
-                child: const Center(
-                  child: CircularProgressIndicator(),
-                ),
+                child: const Center(child: CircularProgressIndicator()),
               );
             },
           ),
@@ -467,18 +466,12 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: textColor.withOpacity(0.2),
-          ),
+          border: Border.all(color: textColor.withOpacity(0.2)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              _getFileIcon(attachment.mimeType),
-              color: textColor,
-              size: 24,
-            ),
+            Icon(_getFileIcon(attachment.mimeType), color: textColor, size: 24),
             const SizedBox(width: 12),
             Flexible(
               child: Column(
@@ -505,11 +498,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
               ),
             ),
             const SizedBox(width: 8),
-            Icon(
-              Icons.download,
-              color: textColor.withOpacity(0.7),
-              size: 20,
-            ),
+            Icon(Icons.download, color: textColor.withOpacity(0.7), size: 20),
           ],
         ),
       ),
@@ -561,9 +550,11 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                     borderRadius: BorderRadius.circular(1),
                   ),
                   child: LinearProgressIndicator(
-                    value: _duration.inMilliseconds > 0
-                        ? _position.inMilliseconds / _duration.inMilliseconds
-                        : 0,
+                    value:
+                        _duration.inMilliseconds > 0
+                            ? _position.inMilliseconds /
+                                _duration.inMilliseconds
+                            : 0,
                     backgroundColor: Colors.transparent,
                     valueColor: AlwaysStoppedAnimation<Color>(textColor),
                   ),
@@ -613,29 +604,30 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         ),
         const SizedBox(height: 12),
         ...poll.options.map((option) {
-          final percentage = totalVotes > 0
-              ? (option.votes.length / totalVotes * 100).round()
-              : 0;
+          final percentage =
+              totalVotes > 0
+                  ? (option.votes.length / totalVotes * 100).round()
+                  : 0;
           final hasVoted = option.votes.contains(widget.currentUserId);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
             child: GestureDetector(
-              onTap: () => widget.onPollVote?.call(
-                widget.message.id,
-                option.id,
-              ),
+              onTap:
+                  () => widget.onPollVote?.call(widget.message.id, option.id),
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: hasVoted
-                      ? colorScheme.primary.withOpacity(0.15)
-                      : colorScheme.surfaceContainer.withOpacity(0.5),
+                  color:
+                      hasVoted
+                          ? colorScheme.primary.withOpacity(0.15)
+                          : colorScheme.surfaceContainer.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: hasVoted
-                        ? colorScheme.primary
-                        : colorScheme.outline.withOpacity(0.3),
+                    color:
+                        hasVoted
+                            ? colorScheme.primary
+                            : colorScheme.outline.withOpacity(0.3),
                     width: hasVoted ? 2 : 1,
                   ),
                 ),
@@ -646,9 +638,8 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                         option.title,
                         style: TextStyle(
                           color: textColor,
-                          fontWeight: hasVoted
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                          fontWeight:
+                              hasVoted ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -687,11 +678,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       children: [
         Row(
           children: [
-            Icon(
-              Icons.task_alt,
-              color: textColor,
-              size: 20,
-            ),
+            Icon(Icons.task_alt, color: textColor, size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -718,18 +705,22 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
           return Container(
             margin: const EdgeInsets.only(bottom: 6),
             child: GestureDetector(
-              onTap: () => widget.onTodoToggle?.call(
-                widget.message.id,
-                item.id,
-                !item.isDone,
-              ),
+              onTap:
+                  () => widget.onTodoToggle?.call(
+                    widget.message.id,
+                    item.id,
+                    !item.isDone,
+                  ),
               child: Row(
                 children: [
                   Icon(
-          item.isDone ? Icons.check_box : Icons.check_box_outline_blank,
-          color: item.isDone
-            ? colorScheme.primary
-            : colorScheme.onSurface.withOpacity(0.7),
+                    item.isDone
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    color:
+                        item.isDone
+                            ? colorScheme.primary
+                            : colorScheme.onSurface.withOpacity(0.7),
                     size: 20,
                   ),
                   const SizedBox(width: 8),
@@ -738,9 +729,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                       item.title,
                       style: TextStyle(
                         color: textColor,
-                        decoration: item.isDone
-                            ? TextDecoration.lineThrough
-                            : TextDecoration.none,
+                        decoration:
+                            item.isDone
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
                       ),
                     ),
                   ),
@@ -759,18 +751,12 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       decoration: BoxDecoration(
         color: Colors.orange.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.orange.withOpacity(0.3),
-        ),
+        border: Border.all(color: Colors.orange.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.info_outline,
-            color: Colors.orange,
-            size: 16,
-          ),
+          Icon(Icons.info_outline, color: Colors.orange, size: 16),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
@@ -789,7 +775,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
 
   IconData _getFileIcon(String? mimeType) {
     if (mimeType == null) return Icons.insert_drive_file;
-    
+
     if (mimeType.startsWith('image/')) return Icons.image;
     if (mimeType.startsWith('video/')) return Icons.video_file;
     if (mimeType.startsWith('audio/')) return Icons.audio_file;
@@ -806,7 +792,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     if (mimeType.contains('zip') || mimeType.contains('rar')) {
       return Icons.archive;
     }
-    
+
     return Icons.insert_drive_file;
   }
 
@@ -843,18 +829,12 @@ class _OptionButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: colorScheme.outline.withOpacity(0.3),
-          ),
+          border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: colorScheme.primary,
-            ),
+            Icon(icon, size: 16, color: colorScheme.primary),
             const SizedBox(width: 4),
             Text(
               label,

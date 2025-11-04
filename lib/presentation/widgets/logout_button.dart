@@ -16,31 +16,34 @@ class LogoutButton extends StatelessWidget {
             return AlertDialog(
               title: Text(
                 'Logout',
-                style: Theme.of(dialogContext)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(color: Theme.of(dialogContext).colorScheme.onSurface),
+                style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(dialogContext).colorScheme.onSurface,
+                ),
               ),
               content: Text(
                 'Are you sure you want to logout?',
-                style: Theme.of(dialogContext)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Theme.of(dialogContext).colorScheme.onSurfaceVariant),
+                style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                ),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: Text(
                     'Cancel',
-                    style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurfaceVariant),
+                    style: TextStyle(
+                      color:
+                          Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(true),
                   child: Text(
                     'Logout',
-                    style: TextStyle(color: Theme.of(dialogContext).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(dialogContext).colorScheme.error,
+                    ),
                   ),
                 ),
               ],
@@ -52,7 +55,9 @@ class LogoutButton extends StatelessWidget {
           try {
             await AuthService().signOut();
             if (context.mounted) {
-              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/', (route) => false);
             }
           } catch (e) {
             if (context.mounted) {

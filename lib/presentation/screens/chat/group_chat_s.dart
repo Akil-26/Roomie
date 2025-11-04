@@ -8,9 +8,6 @@ class GroupChatScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChatScreen(
-      chatData: group,
-      chatType: 'group',
-    );
+    return ChatScreen(chatData: group, chatType: 'group');
   }
 }

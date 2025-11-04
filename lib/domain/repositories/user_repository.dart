@@ -6,32 +6,32 @@ import 'package:roomie/core/errors/failures.dart';
 abstract class UserRepository {
   /// Get current user
   Future<Either<Failure, UserEntity?>> getCurrentUser();
-  
+
   /// Get user by ID
   Future<Either<Failure, UserEntity?>> getUserById(String userId);
-  
+
   /// Update user profile
   Future<Either<Failure, void>> updateUserProfile(UserEntity user);
-  
+
   /// Upload profile image
   Future<Either<Failure, String>> uploadProfileImage(String imagePath);
-  
+
   /// Search users by name or username
   Future<Either<Failure, List<UserEntity>>> searchUsers(String query);
-  
+
   /// Follow/Unfollow user
   Future<Either<Failure, void>> followUser(String userId);
   Future<Either<Failure, void>> unfollowUser(String userId);
-  
+
   /// Check if user is following another user
   Future<Either<Failure, bool>> isFollowing(String userId);
-  
+
   /// Get user's followers
   Future<Either<Failure, List<UserEntity>>> getFollowers(String userId);
-  
+
   /// Get user's following
   Future<Either<Failure, List<UserEntity>>> getFollowing(String userId);
-  
+
   /// Delete user account
   Future<Either<Failure, void>> deleteAccount();
 }

@@ -20,43 +20,51 @@ void main() async {
   // Load environment variables with fallback
   try {
     await dotenv.load(fileName: ".env");
-  AppLogger.d('✅ Environment variables loaded');
+    AppLogger.d('✅ Environment variables loaded');
   } catch (e) {
-  AppLogger.e('❌ Environment variables failed', e);
-  AppLogger.d('🔧 Using hardcoded Firebase config for mobile');
+    AppLogger.e('❌ Environment variables failed', e);
+    AppLogger.d('🔧 Using hardcoded Firebase config for mobile');
   }
 
   // Initialize Firebase with error handling and duplicate-app guard
   try {
     if (Firebase.apps.isEmpty) {
-  AppLogger.d('ℹ️ No Firebase apps found. Initializing default app...');
+      AppLogger.d('ℹ️ No Firebase apps found. Initializing default app...');
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-  AppLogger.d('✅ Firebase initialized successfully');
+      AppLogger.d('✅ Firebase initialized successfully');
     } else {
       // Reuse existing app (common after hot restart)
-  AppLogger.d('ℹ️ Firebase already initialized. Apps count: ${Firebase.apps.length}');
+      AppLogger.d(
+        'ℹ️ Firebase already initialized. Apps count: ${Firebase.apps.length}',
+      );
     }
   } on FirebaseException catch (e) {
     if (e.code == 'duplicate-app') {
       // Safe to ignore and continue using the existing default app
-  AppLogger.d('⚠️ Firebase default app already exists; reusing existing instance.');
+      AppLogger.d(
+        '⚠️ Firebase default app already exists; reusing existing instance.',
+      );
     } else {
-  AppLogger.e('❌ Firebase initialization failed: [${e.code}] ${e.message}');
-  AppLogger.d('🔧 App will continue to boot, but Firebase features may be unavailable.');
+      AppLogger.e('❌ Firebase initialization failed: [${e.code}] ${e.message}');
+      AppLogger.d(
+        '🔧 App will continue to boot, but Firebase features may be unavailable.',
+      );
     }
   } catch (e) {
-  AppLogger.e('❌ Firebase initialization failed (unexpected): $e');
-  AppLogger.d('🔧 App will continue to boot, but Firebase features may be unavailable.');
+    AppLogger.e('❌ Firebase initialization failed (unexpected): $e');
+    AppLogger.d(
+      '🔧 App will continue to boot, but Firebase features may be unavailable.',
+    );
   }
 
   // Initialize notifications
   try {
     await NotificationService().initialize();
-  AppLogger.d('✅ Notifications initialized');
+    AppLogger.d('✅ Notifications initialized');
   } catch (e) {
-  AppLogger.e('❌ Notifications failed: $e');
+    AppLogger.e('❌ Notifications failed: $e');
   }
 
   AppLogger.d('🚀 Starting Roomie App (Firestore + Cloudinary mode)...');

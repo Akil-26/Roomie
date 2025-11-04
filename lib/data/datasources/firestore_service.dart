@@ -66,7 +66,8 @@ class FirestoreService {
       existingProfileImageUrl = data?['profileImageUrl'] as String?;
     }
 
-    String? profileImageUrl = existingProfileImageUrl; // Start with existing URL
+    String? profileImageUrl =
+        existingProfileImageUrl; // Start with existing URL
 
     // Upload to Cloudinary if new file provided
     if (profileImage != null) {
@@ -74,7 +75,7 @@ class FirestoreService {
         print('Uploading profile image to Cloudinary...');
         // Test connection first
         _profileImageService.testCloudinaryConnection();
-        
+
         final uploadedUrl = await _profileImageService.saveUserProfileImage(
           userId: userId,
           imageFile: profileImage,
@@ -152,7 +153,10 @@ class FirestoreService {
   }
 
   // Unfollow a user
-  Future<void> unfollowUser(String currentUserId, String userIdToUnfollow) async {
+  Future<void> unfollowUser(
+    String currentUserId,
+    String userIdToUnfollow,
+  ) async {
     // Remove from current user's following list
     await _firestore
         .collection('users')
@@ -172,26 +176,35 @@ class FirestoreService {
 
   // Check if a user is following another
   Future<bool> isFollowing(String currentUserId, String userIdToCheck) async {
-    final doc = await _firestore
-        .collection('users')
-        .doc(currentUserId)
-        .collection('following')
-        .doc(userIdToCheck)
-        .get();
+    final doc =
+        await _firestore
+            .collection('users')
+            .doc(currentUserId)
+            .collection('following')
+            .doc(userIdToCheck)
+            .get();
     return doc.exists;
   }
 
   // Get following count
   Future<int> getFollowingCount(String userId) async {
     final snapshot =
-        await _firestore.collection('users').doc(userId).collection('following').get();
+        await _firestore
+            .collection('users')
+            .doc(userId)
+            .collection('following')
+            .get();
     return snapshot.size;
   }
 
   // Get followers count
   Future<int> getFollowersCount(String userId) async {
     final snapshot =
-        await _firestore.collection('users').doc(userId).collection('followers').get();
+        await _firestore
+            .collection('users')
+            .doc(userId)
+            .collection('followers')
+            .get();
     return snapshot.size;
   }
 }

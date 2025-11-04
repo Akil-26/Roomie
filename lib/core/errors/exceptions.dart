@@ -6,11 +6,12 @@ library;
 abstract class AppException implements Exception {
   final String message;
   final String? code;
-  
+
   const AppException(this.message, [this.code]);
-  
+
   @override
-  String toString() => 'AppException: $message${code != null ? ' (Code: $code)' : ''}';
+  String toString() =>
+      'AppException: $message${code != null ? ' (Code: $code)' : ''}';
 }
 
 /// Authentication related exceptions
@@ -71,10 +72,11 @@ class ExceptionMessages {
   static const String emailAlreadyInUse = 'Email is already in use';
   static const String weakPassword = 'Password is too weak';
   static const String userDisabled = 'User account has been disabled';
-  static const String tooManyRequests = 'Too many login attempts. Please try again later';
+  static const String tooManyRequests =
+      'Too many login attempts. Please try again later';
   static const String operationNotAllowed = 'Operation not allowed';
   static const String invalidEmail = 'Invalid email address';
-  
+
   // Network
   static const String noInternet = 'No internet connection';
   static const String requestTimeout = 'Request timeout';
@@ -83,7 +85,7 @@ class ExceptionMessages {
   static const String unauthorized = 'Unauthorized access';
   static const String forbidden = 'Access forbidden';
   static const String notFound = 'Resource not found';
-  
+
   // Firestore
   static const String documentNotFound = 'Document not found';
   static const String permissionDenied = 'Permission denied';
@@ -94,30 +96,30 @@ class ExceptionMessages {
   static const String unimplemented = 'Operation not implemented';
   static const String internal = 'Internal error';
   static const String dataLoss = 'Data loss occurred';
-  
+
   // File/Image
   static const String fileNotFound = 'File not found';
   static const String invalidFileFormat = 'Invalid file format';
   static const String fileTooLarge = 'File size too large';
   static const String uploadFailed = 'File upload failed';
   static const String downloadFailed = 'File download failed';
-  
+
   // Validation
   static const String requiredField = 'This field is required';
   static const String invalidFormat = 'Invalid format';
   static const String tooShort = 'Value is too short';
   static const String tooLong = 'Value is too long';
   static const String invalidCharacters = 'Contains invalid characters';
-  
+
   // Location
   static const String locationPermissionDenied = 'Location permission denied';
   static const String locationServiceDisabled = 'Location service is disabled';
   static const String locationUnavailable = 'Location unavailable';
-  
+
   // Cache
   static const String cacheError = 'Cache error occurred';
   static const String cacheExpired = 'Cache has expired';
-  
+
   // General
   static const String unknownError = 'An unknown error occurred';
   static const String operationFailed = 'Operation failed';

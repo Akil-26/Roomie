@@ -10,9 +10,12 @@ void main() {
     // Monkey patch: create a local function replicating uploadBytes logic using injected client
     Future<String?> uploadWithMock(Uint8List bytes, http.Client client) async {
       final uri = Uri.parse(CloudinaryConfig.uploadUrl);
-      final request = http.MultipartRequest('POST', uri)
-        ..fields['upload_preset'] = CloudinaryConfig.uploadPreset
-        ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: 'test.png'));
+      final request =
+          http.MultipartRequest('POST', uri)
+            ..fields['upload_preset'] = CloudinaryConfig.uploadPreset
+            ..files.add(
+              http.MultipartFile.fromBytes('file', bytes, filename: 'test.png'),
+            );
 
       final streamed = await client.send(request);
       final response = await http.Response.fromStream(streamed);
@@ -24,10 +27,19 @@ void main() {
     }
 
     final mockClient = MockClient((req) async {
-      return http.Response(jsonEncode({'secure_url': 'https://res.cloudinary.com/demo/image/upload/v1/test.png'}), 200);
+      return http.Response(
+        jsonEncode({
+          'secure_url':
+              'https://res.cloudinary.com/demo/image/upload/v1/test.png',
+        }),
+        200,
+      );
     });
 
-    final result = await uploadWithMock(Uint8List.fromList([1, 2, 3]), mockClient);
+    final result = await uploadWithMock(
+      Uint8List.fromList([1, 2, 3]),
+      mockClient,
+    );
     expect(result, isNotNull);
     expect(result, contains('cloudinary.com'));
   });

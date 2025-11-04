@@ -7,7 +7,8 @@ class RoomieChatAssistantScreen extends StatefulWidget {
   const RoomieChatAssistantScreen({super.key, this.isModal = false});
 
   @override
-  State<RoomieChatAssistantScreen> createState() => _RoomieChatAssistantScreenState();
+  State<RoomieChatAssistantScreen> createState() =>
+      _RoomieChatAssistantScreenState();
 }
 
 class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
@@ -48,7 +49,7 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
 
     final userMessage = _messageController.text.trim();
     final currentUser = _authService.currentUser;
-    
+
     setState(() {
       _messages.add({
         'senderId': currentUser?.uid ?? 'user',
@@ -66,7 +67,7 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
     try {
       // Get response from Gemini AI
       final response = await _geminiService.sendMessage(userMessage);
-      
+
       if (mounted) {
         setState(() {
           _messages.add({
@@ -151,7 +152,11 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
                     CircleAvatar(
                       radius: 20,
                       backgroundColor: colorScheme.primary,
-                      child: Icon(Icons.support_agent, color: colorScheme.onPrimary, size: 20),
+                      child: Icon(
+                        Icons.support_agent,
+                        color: colorScheme.onPrimary,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -187,7 +192,8 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
                               'senderId': 'assistant',
                               'senderName': 'Roomie Assistant',
                               'message': _geminiService.getWelcomeMessage(),
-                              'timestamp': DateTime.now().millisecondsSinceEpoch,
+                              'timestamp':
+                                  DateTime.now().millisecondsSinceEpoch,
                               'isSystemMessage': false,
                             });
                           });
@@ -195,43 +201,45 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
                         } else if (value == 'info') {
                           showDialog(
                             context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('About Roomie Assistant'),
-                              content: const Text(
-                                'I\'m your AI-powered roommate assistant, powered by Google Gemini AI! I can help you with expense management, roommate coordination, house organization, and much more.\n\nI provide personalized advice based on real AI understanding of your questions.',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('Got it!'),
+                            builder:
+                                (context) => AlertDialog(
+                                  title: const Text('About Roomie Assistant'),
+                                  content: const Text(
+                                    'I\'m your AI-powered roommate assistant, powered by Google Gemini AI! I can help you with expense management, roommate coordination, house organization, and much more.\n\nI provide personalized advice based on real AI understanding of your questions.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('Got it!'),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
                           );
                         }
                       },
-                      itemBuilder: (BuildContext context) => [
-                        const PopupMenuItem<String>(
-                          value: 'clear',
-                          child: Row(
-                            children: [
-                              Icon(Icons.refresh),
-                              SizedBox(width: 8),
-                              Text('Clear Chat'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem<String>(
-                          value: 'info',
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline),
-                              SizedBox(width: 8),
-                              Text('About'),
-                            ],
-                          ),
-                        ),
-                      ],
+                      itemBuilder:
+                          (BuildContext context) => [
+                            const PopupMenuItem<String>(
+                              value: 'clear',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.refresh),
+                                  SizedBox(width: 8),
+                                  Text('Clear Chat'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem<String>(
+                              value: 'info',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.info_outline),
+                                  SizedBox(width: 8),
+                                  Text('About'),
+                                ],
+                              ),
+                            ),
+                          ],
                     ),
                   ],
                 ),
@@ -250,7 +258,7 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
                   if (index == _messages.length && _isTyping) {
                     return _buildTypingIndicator();
                   }
-                  
+
                   final messageData = _messages[index];
                   return _buildMessageBubble(messageData);
                 },
@@ -271,17 +279,18 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
         elevation: 1,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: Icon(
-            Icons.arrow_back,
-            color: colorScheme.onSurface,
-          ),
+          icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
         ),
         title: Row(
           children: [
             CircleAvatar(
               radius: 20,
               backgroundColor: colorScheme.primary,
-              child: Icon(Icons.support_agent, color: colorScheme.onPrimary, size: 20),
+              child: Icon(
+                Icons.support_agent,
+                color: colorScheme.onPrimary,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -328,43 +337,45 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
               } else if (value == 'info') {
                 showDialog(
                   context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('About Roomie Assistant'),
-                    content: const Text(
-                      'I\'m your AI-powered roommate assistant, powered by Google Gemini AI! I can help you with expense management, roommate coordination, house organization, and much more.\n\nI provide personalized advice based on real AI understanding of your questions.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Got it!'),
+                  builder:
+                      (context) => AlertDialog(
+                        title: const Text('About Roomie Assistant'),
+                        content: const Text(
+                          'I\'m your AI-powered roommate assistant, powered by Google Gemini AI! I can help you with expense management, roommate coordination, house organization, and much more.\n\nI provide personalized advice based on real AI understanding of your questions.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Got it!'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
                 );
               }
             },
-            itemBuilder: (BuildContext context) => [
-              const PopupMenuItem<String>(
-                value: 'clear',
-                child: Row(
-                  children: [
-                    Icon(Icons.refresh),
-                    SizedBox(width: 8),
-                    Text('Clear Chat'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'info',
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline),
-                    SizedBox(width: 8),
-                    Text('About'),
-                  ],
-                ),
-              ),
-            ],
+            itemBuilder:
+                (BuildContext context) => [
+                  const PopupMenuItem<String>(
+                    value: 'clear',
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh),
+                        SizedBox(width: 8),
+                        Text('Clear Chat'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'info',
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline),
+                        SizedBox(width: 8),
+                        Text('About'),
+                      ],
+                    ),
+                  ),
+                ],
           ),
         ],
       ),
@@ -380,7 +391,7 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
                 if (index == _messages.length && _isTyping) {
                   return _buildTypingIndicator();
                 }
-                
+
                 final messageData = _messages[index];
                 return _buildMessageBubble(messageData);
               },
@@ -398,7 +409,8 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     final currentUser = _authService.currentUser;
-    final isUser = messageData['senderId'] != 'assistant' &&
+    final isUser =
+        messageData['senderId'] != 'assistant' &&
         (messageData['senderId'] == (currentUser?.uid ?? 'user'));
     final message = messageData['message'] as String? ?? '';
     final timestampEpoch = messageData['timestamp'] as int?;
@@ -415,7 +427,11 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
             CircleAvatar(
               radius: 16,
               backgroundColor: colorScheme.primary,
-              child: Icon(Icons.support_agent, color: colorScheme.onPrimary, size: 16),
+              child: Icon(
+                Icons.support_agent,
+                color: colorScheme.onPrimary,
+                size: 16,
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -449,7 +465,10 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
                     style: textTheme.bodyMedium?.copyWith(
                       fontSize: 16,
                       height: 1.3,
-                      color: isUser ? colorScheme.onPrimary : colorScheme.onSurface,
+                      color:
+                          isUser
+                              ? colorScheme.onPrimary
+                              : colorScheme.onSurface,
                     ),
                   ),
                   if (timeString.isNotEmpty) ...[
@@ -458,9 +477,10 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
                       timeString,
                       style: textTheme.bodySmall?.copyWith(
                         fontSize: 11,
-                        color: isUser
-                            ? colorScheme.onPrimary.withValues(alpha: 0.7)
-                            : colorScheme.onSurfaceVariant,
+                        color:
+                            isUser
+                                ? colorScheme.onPrimary.withValues(alpha: 0.7)
+                                : colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -474,7 +494,10 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
               radius: 16,
               backgroundColor: colorScheme.secondary,
               child: Text(
-                (messageData['senderName'] as String?)?.substring(0, 1).toUpperCase() ?? 'Y',
+                (messageData['senderName'] as String?)
+                        ?.substring(0, 1)
+                        .toUpperCase() ??
+                    'Y',
                 style: TextStyle(
                   color: colorScheme.onSecondary,
                   fontSize: 12,
@@ -499,7 +522,11 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
           CircleAvatar(
             radius: 16,
             backgroundColor: colorScheme.primary,
-            child: Icon(Icons.support_agent, color: colorScheme.onPrimary, size: 16),
+            child: Icon(
+              Icons.support_agent,
+              color: colorScheme.onPrimary,
+              size: 16,
+            ),
           ),
           const SizedBox(width: 8),
           Container(
@@ -552,7 +579,9 @@ class _RoomieChatAssistantScreenState extends State<RoomieChatAssistantScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        border: Border(top: BorderSide(color: colorScheme.outlineVariant, width: 0.5)),
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
+        ),
       ),
       child: Column(
         children: [

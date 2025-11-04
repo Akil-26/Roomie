@@ -118,6 +118,8 @@ class _OtpScreenState extends State<OtpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final phoneNumber = ModalRoute.of(context)?.settings.arguments as String?;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -127,18 +129,18 @@ class _OtpScreenState extends State<OtpScreen> {
       backgroundColor: colorScheme.surface,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.06),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 20),
+              SizedBox(height: screenHeight * 0.025),
               // Header with back button
               Row(
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: EdgeInsets.all(screenWidth * 0.02),
                       decoration: BoxDecoration(
                         color: colorScheme.surface,
                         shape: BoxShape.circle,
@@ -152,14 +154,14 @@ class _OtpScreenState extends State<OtpScreen> {
                       ),
                       child: Icon(
                         Icons.arrow_back_ios_new,
-                        size: 18,
+                        size: screenWidth * 0.045,
                         color: colorScheme.onSurface,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 40),
+              SizedBox(height: screenHeight * 0.05),
 
               // Title and description
               Text(
@@ -170,7 +172,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   color: colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: screenHeight * 0.015),
               Text(
                 phoneNumber != null
                     ? 'We\'ve sent a code to $phoneNumber'
@@ -181,17 +183,18 @@ class _OtpScreenState extends State<OtpScreen> {
                   height: 1.4,
                 ),
               ),
-              const SizedBox(height: 60),
+              SizedBox(height: screenHeight * 0.075),
 
               // OTP input boxes
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: List.generate(6, (index) {
                   return Container(
-                    width: 45,
-                    height: 50,
+                    width: screenWidth * 0.1125,
+                    height: screenHeight * 0.062,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: TextField(
@@ -209,7 +212,9 @@ class _OtpScreenState extends State<OtpScreen> {
                         counterText: '',
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.zero,
-                        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                        hintStyle: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       onChanged: (value) {
                         if (value.isNotEmpty) {
@@ -261,12 +266,12 @@ class _OtpScreenState extends State<OtpScreen> {
                         ),
               ),
 
-              const SizedBox(height: 32),
+              SizedBox(height: screenHeight * 0.04),
 
               // Verify button
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: screenHeight * 0.062,
                 child: ElevatedButton(
                   onPressed: _loading ? null : _verifyOTP,
                   style: ElevatedButton.styleFrom(
@@ -279,10 +284,10 @@ class _OtpScreenState extends State<OtpScreen> {
                   ),
                   child:
                       _loading
-                          ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: RoomieLoadingSmall(size: 24),
+                          ? SizedBox(
+                            width: screenWidth * 0.06,
+                            height: screenWidth * 0.06,
+                            child: RoomieLoadingSmall(size: screenWidth * 0.06),
                           )
                           : const Text(
                             'Verify',

@@ -297,15 +297,11 @@ class GroupsService {
       if (members.contains(user.uid)) {
         members.remove(user.uid);
 
-        // If the group is now empty, mark it as inactive.
+        // If the group is now empty, delete it completely.
         // Otherwise, just update the member list and count.
         if (members.isEmpty) {
-          tx.update(ref, {
-            'members': members,
-            'memberCount': 0,
-            'isActive': false, // Deactivate group if last member leaves
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          // Delete the group document completely when no members left
+          tx.delete(ref);
         } else {
           tx.update(ref, {
             'members': members,
@@ -318,6 +314,47 @@ class GroupsService {
         throw Exception('User is not a member of this group');
       }
     });
+
+    // Clean up related data if group was deleted (members empty)
+    final groupDoc = await ref.get();
+    if (!groupDoc.exists) {
+      // Group was deleted, so clean up related collections
+      await _cleanupGroupData(groupId);
+    }
+  }
+
+  /// Helper method to clean up all related data when a group is deleted
+  Future<void> _cleanupGroupData(String groupId) async {
+    try {
+      // Delete all join requests for this group
+      final joinRequestsQuery = await _firestore
+          .collection('joinRequests')
+          .where('groupId', isEqualTo: groupId)
+          .get();
+      
+      for (var doc in joinRequestsQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Delete group chat messages
+      final messagesQuery = await _firestore
+          .collection('chats')
+          .doc(groupId)
+          .collection('messages')
+          .get();
+      
+      for (var doc in messagesQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Delete the chat document itself
+      await _firestore.collection('chats').doc(groupId).delete();
+
+      print('Successfully cleaned up all data for deleted group: $groupId');
+    } catch (e) {
+      print('Error cleaning up group data: $e');
+      // Don't throw error as the main group deletion already succeeded
+    }
   }
 
   Future<bool> updateGroup({
@@ -398,7 +435,7 @@ class GroupsService {
         'id': requestRef.id,
         'groupId': groupId,
         'userId': user.uid,
-        'userName': userData['name'] ?? user.displayName ?? 'Unknown User',
+        'userName': userData['username'] ?? userData['name'] ?? 'Unknown User',
         'userEmail': userData['email'] ?? user.email ?? '',
         'userPhone': userData['phone'] ?? '',
         'userAge': userData['age'],
@@ -427,7 +464,7 @@ class GroupsService {
             userId: memberId,
             title: 'New Join Request',
             body:
-                '${userData['name'] ?? user.displayName ?? 'Someone'} requested to join "$groupName".',
+                '${userData['username'] ?? userData['name'] ?? 'Someone'} requested to join "$groupName".',
             type: 'join_request_received',
             data: {
               'groupId': groupId,

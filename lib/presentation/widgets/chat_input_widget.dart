@@ -117,7 +117,8 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
       }
 
       final tempDir = await getTemporaryDirectory();
-      final path = '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final path =
+          '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
       await _voiceRecorder.start(
         const RecordConfig(
@@ -150,10 +151,19 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
   Future<void> _stopRecording() async {
     if (!_isRecording) return;
 
+    // Check if recording is at least 1 second
+    if (_recordDuration.inSeconds < 1) {
+      _showErrorSnackBar('Recording must be at least 1 second');
+      _cancelRecording();
+      return;
+    }
+
     try {
       final path = await _voiceRecorder.stop();
       _recordTimer?.cancel();
-      
+
+      final duration = _recordDuration;
+
       setState(() {
         _isRecording = false;
         _recordDuration = Duration.zero;
@@ -165,7 +175,7 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
       if (path != null) {
         final file = File(path);
         if (await file.exists()) {
-          widget.onVoiceRecorded?.call(file, _recordDuration.inMilliseconds);
+          widget.onVoiceRecorded?.call(file, duration.inMilliseconds);
         }
       }
     } catch (e) {
@@ -180,7 +190,7 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
     try {
       await _voiceRecorder.cancel();
       _recordTimer?.cancel();
-      
+
       setState(() {
         _isRecording = false;
         _recordDuration = Duration.zero;
@@ -236,16 +246,19 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
   void _showPermissionDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Permission Required'),
-        content: const Text('Microphone permission is required to record voice messages.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Permission Required'),
+            content: const Text(
+              'Microphone permission is required to record voice messages.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -273,17 +286,12 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
     final colorScheme = theme.colorScheme;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: colorScheme.outline.withOpacity(0.2),
-            width: 0.5,
-          ),
-        ),
       ),
-      child: Column(
+      child: SafeArea(
+        child: Column(
         children: [
           // Attachment menu
           AnimatedBuilder(
@@ -293,20 +301,10 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
                 sizeFactor: _attachmentAnimation,
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _AttachmentButton(
-                        icon: Icons.photo_library_outlined,
-                        label: 'Gallery',
-                        onTap: () => _pickImage(ImageSource.gallery),
-                      ),
-                      _AttachmentButton(
-                        icon: Icons.camera_alt_outlined,
-                        label: 'Camera',
-                        onTap: () => _pickImage(ImageSource.camera),
-                      ),
                       _AttachmentButton(
                         icon: Icons.insert_drive_file_outlined,
                         label: 'File',
@@ -403,66 +401,90 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
 
           // Main input row
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Attachment button
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: widget.isUploading ? null : _toggleAttachmentMenu,
-                  borderRadius: BorderRadius.circular(24),
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: _showAttachmentMenu
-                          ? colorScheme.primary.withOpacity(0.1)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Icon(
-                      _showAttachmentMenu ? Icons.close : Icons.add,
-                      color: _showAttachmentMenu
-                          ? colorScheme.primary
-                          : colorScheme.onSurface.withOpacity(0.7),
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              // Text input
+              // Text input field with icons
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(
-                      color: colorScheme.outline.withOpacity(0.3),
-                    ),
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(24),
                   ),
-                  child: TextField(
-                    controller: widget.messageController,
-                    focusNode: widget.messageFocusNode,
-                    maxLines: 5,
-                    minLines: 1,
-                    textInputAction: TextInputAction.newline,
-                    decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      hintStyle: TextStyle(
-                        color: colorScheme.onSurface.withOpacity(0.5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const SizedBox(width: 20),
+                      
+                      // Text field
+                      Expanded(
+                        child: TextField(
+                          controller: widget.messageController,
+                          focusNode: widget.messageFocusNode,
+                          maxLines: 5,
+                          minLines: 1,
+                          textInputAction: TextInputAction.newline,
+                          style: TextStyle(
+                            color: colorScheme.onSurface,
+                            fontSize: 16,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Message',
+                            hintStyle: TextStyle(
+                              color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                              fontSize: 16,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                            ),
+                          ),
+                          onSubmitted: (_) {
+                            if (_hasText && !widget.isUploading) {
+                              widget.onSendPressed?.call();
+                            }
+                          },
+                        ),
                       ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
+                      
+                      const SizedBox(width: 4),
+                      
+                      // Attachment button (pin icon)
+                      IconButton(
+                        onPressed: widget.isUploading ? null : _toggleAttachmentMenu,
+                        icon: Icon(
+                          Icons.attach_file,
+                          color: colorScheme.onSurfaceVariant,
+                          size: 24,
+                        ),
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(),
                       ),
-                    ),
-                    onSubmitted: (_) {
-                      if (_hasText && !widget.isUploading) {
-                        widget.onSendPressed?.call();
-                      }
-                    },
+                      
+                      // Camera button
+                      IconButton(
+                        onPressed: widget.isUploading ? null : () => _pickImage(ImageSource.camera),
+                        icon: Icon(
+                          Icons.camera_alt,
+                          color: colorScheme.onSurfaceVariant,
+                          size: 24,
+                        ),
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(),
+                      ),
+                      
+                      const SizedBox(width: 4),
+                    ],
                   ),
                 ),
               ),
@@ -477,44 +499,45 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
                       ? null
                       : _hasText
                           ? widget.onSendPressed
-                          : null,
-                  onLongPress: !_hasText && !widget.isUploading ? _startRecording : null,
-                  onTapUp: _isRecording ? (_) => _stopRecording() : null,
-                  borderRadius: BorderRadius.circular(24),
+                          : _isRecording
+                              ? _stopRecording
+                              : _startRecording,
+                  borderRadius: BorderRadius.circular(28),
                   child: Container(
-                    width: 48,
-                    height: 48,
+                    width: 50,
+                    height: 50,
                     decoration: BoxDecoration(
-                      color: _hasText || _isRecording
-                          ? colorScheme.primary
-                          : colorScheme.primary.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(24),
+                      color:
+                          _hasText || _isRecording
+                              ? colorScheme.primary
+                              : colorScheme.primary.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(28),
                     ),
-                    child: widget.isUploading
-                        ? SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                colorScheme.onPrimary,
+                    child:
+                        widget.isUploading
+                            ? Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  colorScheme.onPrimary,
+                                ),
                               ),
+                            )
+                            : Icon(
+                              _hasText || _isRecording
+                                  ? Icons.send
+                                  : Icons.mic,
+                              color: colorScheme.onPrimary,
+                              size: 24,
                             ),
-                          )
-                        : Icon(
-                            _hasText
-                                ? Icons.send
-                                : _isRecording
-                                    ? Icons.stop
-                                    : Icons.mic,
-                            color: colorScheme.onPrimary,
-                          ),
                   ),
                 ),
               ),
             ],
           ),
         ],
+        ),
       ),
     );
   }
@@ -552,11 +575,7 @@ class _AttachmentButton extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Icon(
-              icon,
-              color: primary,
-              size: 28,
-            ),
+            child: Icon(icon, color: primary, size: 28),
           ),
           const SizedBox(height: 8),
           Text(

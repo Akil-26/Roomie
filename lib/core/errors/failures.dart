@@ -2,9 +2,9 @@
 abstract class Failure {
   final String message;
   final String? code;
-  
+
   const Failure(this.message, [this.code]);
-  
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -12,12 +12,13 @@ abstract class Failure {
           runtimeType == other.runtimeType &&
           message == other.message &&
           code == other.code;
-  
+
   @override
   int get hashCode => message.hashCode ^ code.hashCode;
-  
+
   @override
-  String toString() => 'Failure: $message${code != null ? ' (Code: $code)' : ''}';
+  String toString() =>
+      'Failure: $message${code != null ? ' (Code: $code)' : ''}';
 }
 
 /// Authentication failures

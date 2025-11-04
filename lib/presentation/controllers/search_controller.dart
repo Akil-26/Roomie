@@ -15,9 +15,11 @@ class GroupsSearchController extends ChangeNotifier {
   List<Map<String, dynamic>> _all = [];
   List<Map<String, dynamic>> _results = [];
 
-  GroupsSearchController({GroupsService? groupsService, SearchHistoryService? historyService})
-      : _groupsService = groupsService ?? GroupsService(),
-        _historyService = historyService ?? SearchHistoryService();
+  GroupsSearchController({
+    GroupsService? groupsService,
+    SearchHistoryService? historyService,
+  }) : _groupsService = groupsService ?? GroupsService(),
+       _historyService = historyService ?? SearchHistoryService();
 
   String get query => _query;
   SearchFilters get filters => _filters;
@@ -70,43 +72,62 @@ class GroupsSearchController extends ChangeNotifier {
       return;
     }
     final q = _query.trim().toLowerCase();
-    _results = _all.where((g) {
-      // Apply query on group name and location
-      final name = (g['name']?.toString() ?? '').toLowerCase();
-      final location = (g['location']?.toString() ?? '').toLowerCase();
-      final matchesQuery = q.isEmpty || name.contains(q) || location.contains(q);
+    _results =
+        _all.where((g) {
+          // Apply query on group name and location
+          final name = (g['name']?.toString() ?? '').toLowerCase();
+          final location = (g['location']?.toString() ?? '').toLowerCase();
+          final matchesQuery =
+              q.isEmpty || name.contains(q) || location.contains(q);
 
-      // Filters: rent range
-      final rentAmount = (g['rentAmount'] is num) ? (g['rentAmount'] as num).toDouble() : null;
-      final rentOk = (_filters.minRent == null || (rentAmount != null && rentAmount >= _filters.minRent!)) &&
-          (_filters.maxRent == null || (rentAmount != null && rentAmount <= _filters.maxRent!));
+          // Filters: rent range
+          final rentAmount =
+              (g['rentAmount'] is num)
+                  ? (g['rentAmount'] as num).toDouble()
+                  : null;
+          final rentOk =
+              (_filters.minRent == null ||
+                  (rentAmount != null && rentAmount >= _filters.minRent!)) &&
+              (_filters.maxRent == null ||
+                  (rentAmount != null && rentAmount <= _filters.maxRent!));
 
-      // Filters: location exact/substring
-      final locOk = _filters.location == null || _filters.location!.isEmpty ||
-          location.contains(_filters.location!.toLowerCase());
+          // Filters: location exact/substring
+          final locOk =
+              _filters.location == null ||
+              _filters.location!.isEmpty ||
+              location.contains(_filters.location!.toLowerCase());
 
-      // Filters: room type exact match
-      final roomType = (g['roomType']?.toString() ?? '').toLowerCase();
-      final roomOk = _filters.roomType == null || _filters.roomType!.isEmpty ||
-          roomType == _filters.roomType!.toLowerCase();
+          // Filters: room type exact match
+          final roomType = (g['roomType']?.toString() ?? '').toLowerCase();
+          final roomOk =
+              _filters.roomType == null ||
+              _filters.roomType!.isEmpty ||
+              roomType == _filters.roomType!.toLowerCase();
 
-      // Filters: geodistance if group has coordinates (lat,lng)
-      bool geoOk = true;
-      if (_filters.hasGeo) {
-        final gLat = (g['lat'] is num) ? (g['lat'] as num).toDouble() : null;
-        final gLng = (g['lng'] is num) ? (g['lng'] as num).toDouble() : null;
-        if (gLat != null && gLng != null) {
-          // If room has coordinates, use Haversine distance
-          final dKm = _haversineKm(_filters.lat!, _filters.lng!, gLat, gLng);
-          geoOk = dKm <= (_filters.radiusKm ?? 5.0);
-        } else {
-          // If a geo-filter is active, rooms without coordinates should not match.
-          geoOk = false;
-        }
-      }
+          // Filters: geodistance if group has coordinates (lat,lng)
+          bool geoOk = true;
+          if (_filters.hasGeo) {
+            final gLat =
+                (g['lat'] is num) ? (g['lat'] as num).toDouble() : null;
+            final gLng =
+                (g['lng'] is num) ? (g['lng'] as num).toDouble() : null;
+            if (gLat != null && gLng != null) {
+              // If room has coordinates, use Haversine distance
+              final dKm = _haversineKm(
+                _filters.lat!,
+                _filters.lng!,
+                gLat,
+                gLng,
+              );
+              geoOk = dKm <= (_filters.radiusKm ?? 5.0);
+            } else {
+              // If a geo-filter is active, rooms without coordinates should not match.
+              geoOk = false;
+            }
+          }
 
-      return matchesQuery && rentOk && locOk && roomOk && geoOk;
-    }).toList();
+          return matchesQuery && rentOk && locOk && roomOk && geoOk;
+        }).toList();
   }
 
   // Set geo filter helper

@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:roomie/data/models/notification_model.dart';
@@ -191,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-  color: colorScheme.surface.withValues(alpha: 0),
+        color: colorScheme.surface.withValues(alpha: 0),
         borderRadius: BorderRadius.circular(8),
       ),
       child: IconButton(
@@ -405,14 +404,19 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isActive ? colorScheme.primary : colorScheme.surface.withValues(alpha: 0),
+          color:
+              isActive
+                  ? colorScheme.primary
+                  : colorScheme.surface.withValues(alpha: 0),
           borderRadius: BorderRadius.circular(16),
-          border: isActive ? null : Border.all(color: colorScheme.outlineVariant),
+          border:
+              isActive ? null : Border.all(color: colorScheme.outlineVariant),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+            color:
+                isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
             fontSize: 10,
             fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
           ),
@@ -425,6 +429,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Column(
@@ -434,19 +441,20 @@ class _HomeScreenState extends State<HomeScreen> {
             color: colorScheme.surface,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 6.0,
+                padding: EdgeInsets.symmetric(
+                  horizontal: screenWidth * 0.04,  // 4% of screen width
+                  vertical: screenHeight * 0.01,   // 1% of screen height
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Home',
-                      style: textTheme.headlineSmall?.copyWith(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.bold,
-                      ) ??
+                      style:
+                          textTheme.headlineSmall?.copyWith(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
+                          ) ??
                           TextStyle(
                             color: colorScheme.onSurface,
                             fontSize: 24,
@@ -543,10 +551,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       // Current Room Section (show if user is in a group)
                       if (_currentUserGroup != null) ...[
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          padding: EdgeInsets.fromLTRB(
+                            screenWidth * 0.04,   // left: 4%
+                            screenHeight * 0.005, // top: 0.5% (very small)
+                            screenWidth * 0.04,   // right: 4%
+                            screenHeight * 0.005, // bottom: 0.5%
+                          ),
                           child: Text(
                             'Current Room',
-                            style: textTheme.titleLarge?.copyWith(
+                            style:
+                                textTheme.titleLarge?.copyWith(
                                   color: colorScheme.onSurface,
                                   fontWeight: FontWeight.bold,
                                 ) ??
@@ -557,13 +571,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                           ),
                         ),
-                        _buildCozyCornerCard(),
+                        _buildCozyCornerCard(screenWidth, screenHeight),
                         // Available Rooms section below current room
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                          padding: EdgeInsets.fromLTRB(
+                            screenWidth * 0.04,    // left: 4%
+                            screenHeight * 0.015,  // top: 1.5% (reduced from 3%)
+                            screenWidth * 0.04,    // right: 4%
+                            screenHeight * 0.01,   // bottom: 1%
+                          ),
                           child: Text(
                             'Available Rooms',
-                            style: textTheme.titleLarge?.copyWith(
+                            style:
+                                textTheme.titleLarge?.copyWith(
                                   color: colorScheme.onSurface,
                                   fontWeight: FontWeight.bold,
                                 ) ??
@@ -574,15 +594,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                           ),
                         ),
-                        _buildAvailableGroupsList(),
+                        _buildAvailableGroupsList(screenWidth, screenHeight),
                       ],
                       // Available Groups Section (only show if user has no group)
                       if (_currentUserGroup == null) ...[
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                          padding: EdgeInsets.fromLTRB(
+                            screenWidth * 0.04,    // left: 4%
+                            screenHeight * 0.005,  // top: 0.5% (very small)
+                            screenWidth * 0.04,    // right: 4%
+                            screenHeight * 0.01,   // bottom: 1%
+                          ),
                           child: Text(
                             'Available Groups',
-                            style: textTheme.titleLarge?.copyWith(
+                            style:
+                                textTheme.titleLarge?.copyWith(
                                   color: colorScheme.onSurface,
                                   fontWeight: FontWeight.bold,
                                 ) ??
@@ -593,12 +619,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                           ),
                         ),
-                        _buildAvailableGroupsList(),
+                        _buildAvailableGroupsList(screenWidth, screenHeight),
                       ],
                     ],
-                    const SizedBox(
-                      height: 100,
-                    ), // Bottom padding for page indicators
+                    SizedBox(
+                      height: screenHeight * 0.12,  // 12% of screen height (dynamic bottom padding)
+                    ),
                   ],
                 ),
               ),
@@ -609,7 +635,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCozyCornerCard() {
+  Widget _buildCozyCornerCard(double screenWidth, double screenHeight) {
     final pricing = _parseRentDetails(_currentUserGroup!);
     final double rentAmount = pricing['rentAmount'] as double;
     final String rentCurrency = pricing['rentCurrency'] as String;
@@ -621,7 +647,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final textTheme = theme.textTheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.04,  // 4% horizontal gap (same as before)
+        vertical: screenHeight * 0.01,   // 1% vertical gap
+      ),
       child: GestureDetector(
         onTap: _navigateToGroupDetails,
         child: Container(
@@ -650,167 +679,174 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                  // Group Image
-                  Container(
-                    height: 200,
-                    width: double.infinity,
-                    color: colorScheme.surfaceContainerHighest,
-                    child: Image.network(
-                      _currentUserGroup!['imageUrl'] ??
-                          'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800',
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Center(
-                          child: Icon(
-                            Icons.image,
-                            color: colorScheme.onSurfaceVariant,
-                            size: 50,
-                          ),
-                        );
-                      },
-                    ),
+                // Group Image
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  color: colorScheme.surfaceContainerHighest,
+                  child: Image.network(
+                    _currentUserGroup!['imageUrl'] ??
+                        'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Center(
+                        child: Icon(
+                          Icons.image,
+                          color: colorScheme.onSurfaceVariant,
+                          size: 50,
+                        ),
+                      );
+                    },
                   ),
-                  // Group Details
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _currentUserGroup!['name'] ?? 'My Group',
-                          style: textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.onSurface,
-                              ) ??
-                              TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.onSurface,
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _currentUserGroup!['description'] ??
-                              'Your current group where you can connect with roommates.',
-                          style: textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                                height: 1.4,
-                              ) ??
-                              TextStyle(
-                                fontSize: 14,
-                                color: colorScheme.onSurfaceVariant,
-                                height: 1.4,
-                              ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            if (rentAmount > 0)
-                              _buildMetaChip(
-                                icon: Icons.attach_money,
-                                color: colorScheme.primary,
-                                label: _formatAmount(
-                                  rentAmount,
-                                  rentCurrency,
-                                  suffix: 'per month',
-                                ),
-                              ),
-                            if (advanceAmount > 0)
-                              _buildMetaChip(
-                                icon: Icons.account_balance_wallet_outlined,
-                                color: colorScheme.secondary,
-                                label: _formatAmount(
-                                  advanceAmount,
-                                  rentCurrency,
-                                  suffix: 'advance',
-                                ),
-                              ),
-                            _buildMetaChip(
-                              icon: Icons.home_outlined,
-                              color: colorScheme.secondary,
-                              label: roomType,
+                ),
+                // Group Details
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _currentUserGroup!['name'] ?? 'My Group',
+                        style:
+                            textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
+                            ) ??
+                            TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '${_currentUserGroup!['memberCount'] ?? 1} members',
-                              style: textTheme.bodyMedium?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _currentUserGroup!['description'] ??
+                            'Your current group where you can connect with roommates.',
+                        style:
+                            textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                              height: 1.4,
+                            ) ??
+                            TextStyle(
+                              fontSize: 14,
+                              color: colorScheme.onSurfaceVariant,
+                              height: 1.4,
+                            ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (rentAmount > 0)
+                            _buildMetaChip(
+                              icon: Icons.attach_money,
+                              color: colorScheme.primary,
+                              label: _formatAmount(
+                                rentAmount,
+                                rentCurrency,
+                                suffix: 'per month',
+                              ),
+                            ),
+                          if (advanceAmount > 0)
+                            _buildMetaChip(
+                              icon: Icons.account_balance_wallet_outlined,
+                              color: colorScheme.secondary,
+                              label: _formatAmount(
+                                advanceAmount,
+                                rentCurrency,
+                                suffix: 'advance',
+                              ),
+                            ),
+                          _buildMetaChip(
+                            icon: Icons.home_outlined,
+                            color: colorScheme.secondary,
+                            label: roomType,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${_currentUserGroup!['memberCount'] ?? 1} members',
+                            style:
+                                textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ) ??
+                                TextStyle(
+                                  fontSize: 14,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                          // Chat Button
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (context) => ChatScreen(
+                                        chatData: _currentUserGroup!,
+                                        chatType: 'group',
+                                      ),
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: colorScheme.primary,
+                              foregroundColor: colorScheme.onPrimary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Text(
+                              'Chat',
+                              style:
+                                  textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: colorScheme.onPrimary,
                                   ) ??
                                   TextStyle(
                                     fontSize: 14,
-                                    color: colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                    color: colorScheme.onPrimary,
                                   ),
                             ),
-                            // Chat Button
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (context) => ChatScreen(
-                                          chatData: _currentUserGroup!,
-                                          chatType: 'group',
-                                        ),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: colorScheme.primary,
-                                foregroundColor: colorScheme.onPrimary,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: Text(
-                                'Chat',
-                                style: textTheme.labelLarge?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: colorScheme.onPrimary,
-                                    ) ??
-                                    TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: colorScheme.onPrimary,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 
-  Widget _buildAvailableGroupsList() {
+  Widget _buildAvailableGroupsList(double screenWidth, double screenHeight) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     if (_availableGroups.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: EdgeInsets.symmetric(
+          horizontal: screenWidth * 0.04,  // 4% horizontal gap
+          vertical: screenHeight * 0.01,   // 1% vertical gap
+        ),
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(screenWidth * 0.06),  // 6% internal padding
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
@@ -836,7 +872,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               Text(
                 'No groups available',
-                style: textTheme.titleMedium?.copyWith(
+                style:
+                    textTheme.titleMedium?.copyWith(
                       color: colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ) ??
@@ -851,7 +888,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 _canUserCreateGroup
                     ? 'Create your first group to get started'
                     : 'You are already in a group.',
-                style: textTheme.bodyMedium?.copyWith(
+                style:
+                    textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ) ??
                     TextStyle(
@@ -867,7 +905,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.04,  // 4% horizontal gap
+        vertical: screenHeight * 0.01,   // 1% vertical gap
+      ),
       child: Column(
         children:
             _availableGroups.map((group) {
@@ -879,7 +920,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   (group['roomType'] ?? 'Shared').toString();
 
               return Container(
-                margin: const EdgeInsets.only(bottom: 16),
+                margin: EdgeInsets.only(bottom: screenHeight * 0.02),  // 2% bottom margin
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(16.0),
@@ -924,7 +965,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               Text(
                                 group['name'] ?? 'Unknown Group',
-                                style: textTheme.titleMedium?.copyWith(
+                                style:
+                                    textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.bold,
                                       color: colorScheme.onSurface,
                                     ) ??
@@ -937,7 +979,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(height: 4),
                               Text(
                                 '${group['location'] ?? 'Location'}, ${group['memberCount'] ?? 0} members',
-                                style: textTheme.bodyMedium?.copyWith(
+                                style:
+                                    textTheme.bodyMedium?.copyWith(
                                       color: colorScheme.onSurfaceVariant,
                                     ) ??
                                     TextStyle(
@@ -949,7 +992,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const SizedBox(height: 8),
                                 Text(
                                   group['description'],
-                                  style: textTheme.bodySmall?.copyWith(
+                                  style:
+                                      textTheme.bodySmall?.copyWith(
                                         color: colorScheme.onSurfaceVariant,
                                       ) ??
                                       TextStyle(
@@ -1078,7 +1122,8 @@ class GroupDetailsScreen extends StatelessWidget {
         ),
         title: Text(
           group['name'] ?? 'Group Details',
-          style: textTheme.titleMedium?.copyWith(
+          style:
+              textTheme.titleMedium?.copyWith(
                 color: colorScheme.onSurface,
                 fontWeight: FontWeight.w600,
               ) ??
@@ -1122,7 +1167,8 @@ class GroupDetailsScreen extends StatelessWidget {
                 children: [
                   Text(
                     group['name'] ?? 'Group Name',
-                    style: textTheme.headlineSmall?.copyWith(
+                    style:
+                        textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colorScheme.onSurface,
                         ) ??
@@ -1143,7 +1189,8 @@ class GroupDetailsScreen extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         group['location'] ?? 'Location',
-                        style: textTheme.bodyLarge?.copyWith(
+                        style:
+                            textTheme.bodyLarge?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ) ??
                             TextStyle(
@@ -1160,7 +1207,8 @@ class GroupDetailsScreen extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         '${group['memberCount'] ?? 0} members',
-                        style: textTheme.bodyLarge?.copyWith(
+                        style:
+                            textTheme.bodyLarge?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ) ??
                             TextStyle(
@@ -1173,7 +1221,8 @@ class GroupDetailsScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   Text(
                     'Description',
-                    style: textTheme.titleMedium?.copyWith(
+                    style:
+                        textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: colorScheme.onSurface,
                         ) ??
@@ -1186,7 +1235,8 @@ class GroupDetailsScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     group['description'] ?? 'No description available.',
-                    style: textTheme.bodyLarge?.copyWith(
+                    style:
+                        textTheme.bodyLarge?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                           height: 1.4,
                         ) ??
@@ -1216,7 +1266,8 @@ class GroupDetailsScreen extends StatelessWidget {
                         icon: const Icon(Icons.group_add, size: 18),
                         label: Text(
                           'Manage Join Requests',
-                          style: textTheme.bodyLarge?.copyWith(
+                          style:
+                              textTheme.bodyLarge?.copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: colorScheme.onPrimary,
                               ) ??
@@ -1253,7 +1304,8 @@ class GroupDetailsScreen extends StatelessWidget {
                         ),
                         child: Text(
                           'Leave Group',
-                          style: textTheme.bodyLarge?.copyWith(
+                          style:
+                              textTheme.bodyLarge?.copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: colorScheme.error,
                               ) ??

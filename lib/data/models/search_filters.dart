@@ -7,7 +7,15 @@ class SearchFilters {
   final double? lng;
   final double? radiusKm; // when set with lat/lng, filter by distance
 
-  const SearchFilters({this.minRent, this.maxRent, this.location, this.roomType, this.lat, this.lng, this.radiusKm});
+  const SearchFilters({
+    this.minRent,
+    this.maxRent,
+    this.location,
+    this.roomType,
+    this.lat,
+    this.lng,
+    this.radiusKm,
+  });
 
   // Sentinel to differentiate between "not provided" and "explicit null"
   static const Object _unset = Object();
@@ -24,11 +32,14 @@ class SearchFilters {
     return SearchFilters(
       minRent: identical(minRent, _unset) ? this.minRent : minRent as double?,
       maxRent: identical(maxRent, _unset) ? this.maxRent : maxRent as double?,
-      location: identical(location, _unset) ? this.location : location as String?,
-      roomType: identical(roomType, _unset) ? this.roomType : roomType as String?,
+      location:
+          identical(location, _unset) ? this.location : location as String?,
+      roomType:
+          identical(roomType, _unset) ? this.roomType : roomType as String?,
       lat: identical(lat, _unset) ? this.lat : lat as double?,
       lng: identical(lng, _unset) ? this.lng : lng as double?,
-      radiusKm: identical(radiusKm, _unset) ? this.radiusKm : radiusKm as double?,
+      radiusKm:
+          identical(radiusKm, _unset) ? this.radiusKm : radiusKm as double?,
     );
   }
 

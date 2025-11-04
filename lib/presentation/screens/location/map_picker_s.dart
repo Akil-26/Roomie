@@ -171,7 +171,9 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               child:
                   _isLoadingLocation
                       ? CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.onPrimary,
+                        ),
                       )
                       : const Icon(Icons.my_location),
             ),

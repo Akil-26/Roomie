@@ -4,10 +4,7 @@ import 'package:roomie/data/models/message_model.dart';
 class EditMessageDialog extends StatefulWidget {
   final MessageModel message;
 
-  const EditMessageDialog({
-    super.key,
-    required this.message,
-  });
+  const EditMessageDialog({super.key, required this.message});
 
   @override
   State<EditMessageDialog> createState() => _EditMessageDialogState();
@@ -22,7 +19,8 @@ class _EditMessageDialogState extends State<EditMessageDialog> {
     super.initState();
     _messageController = TextEditingController(text: widget.message.message);
     _messageController.addListener(() {
-      final hasChanges = _messageController.text.trim() != widget.message.message.trim();
+      final hasChanges =
+          _messageController.text.trim() != widget.message.message.trim();
       if (hasChanges != _hasChanges) {
         setState(() {
           _hasChanges = hasChanges;
@@ -68,9 +66,7 @@ class _EditMessageDialogState extends State<EditMessageDialog> {
     final colorScheme = theme.colorScheme;
 
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         padding: const EdgeInsets.all(24),
         constraints: const BoxConstraints(maxWidth: 400),
@@ -81,11 +77,7 @@ class _EditMessageDialogState extends State<EditMessageDialog> {
             // Header
             Row(
               children: [
-                Icon(
-                  Icons.edit,
-                  color: colorScheme.primary,
-                  size: 24,
-                ),
+                Icon(Icons.edit, color: colorScheme.primary, size: 24),
                 const SizedBox(width: 12),
                 Text(
                   'Edit Message',
@@ -109,9 +101,7 @@ class _EditMessageDialogState extends State<EditMessageDialog> {
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainer.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: colorScheme.outline.withOpacity(0.2),
-                ),
+                border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,21 +154,22 @@ class _EditMessageDialogState extends State<EditMessageDialog> {
                   ),
                 ),
                 initiallyExpanded: false,
-                children: widget.message.editHistory.map((edit) {
-                  return ListTile(
-                    dense: true,
-                    title: Text(
-                      edit.text,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    subtitle: Text(
-                      'Edited ${_formatDateTime(edit.editedAt)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                  );
-                }).toList(),
+                children:
+                    widget.message.editHistory.map((edit) {
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          edit.text,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        subtitle: Text(
+                          'Edited ${_formatDateTime(edit.editedAt)}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurface.withOpacity(0.6),
+                          ),
+                        ),
+                      );
+                    }).toList(),
               ),
             ],
 
@@ -256,9 +247,7 @@ class MessageInfoDialog extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         padding: const EdgeInsets.all(24),
         constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
@@ -269,11 +258,7 @@ class MessageInfoDialog extends StatelessWidget {
             // Header
             Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  color: colorScheme.primary,
-                  size: 24,
-                ),
+                Icon(Icons.info_outline, color: colorScheme.primary, size: 24),
                 const SizedBox(width: 12),
                 Text(
                   'Message Info',
@@ -297,9 +282,7 @@ class MessageInfoDialog extends StatelessWidget {
               decoration: BoxDecoration(
                 color: colorScheme.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: colorScheme.primary.withOpacity(0.3),
-                ),
+                border: Border.all(color: colorScheme.primary.withOpacity(0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,23 +355,27 @@ class MessageInfoDialog extends StatelessWidget {
                       return ListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
-                        leading: userImage != null
-                            ? CircleAvatar(
-                                radius: 16,
-                                backgroundImage: NetworkImage(userImage),
-                              )
-                            : CircleAvatar(
-                                radius: 16,
-                                backgroundColor: colorScheme.primary.withOpacity(0.7),
-                                child: Text(
-                                  userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onPrimary,
+                        leading:
+                            userImage != null
+                                ? CircleAvatar(
+                                  radius: 16,
+                                  backgroundImage: NetworkImage(userImage),
+                                )
+                                : CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: colorScheme.primary
+                                      .withOpacity(0.7),
+                                  child: Text(
+                                    userName.isNotEmpty
+                                        ? userName[0].toUpperCase()
+                                        : 'U',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: colorScheme.onPrimary,
+                                    ),
                                   ),
                                 ),
-                              ),
                         title: Text(
                           userName,
                           style: theme.textTheme.bodyMedium?.copyWith(
@@ -435,10 +422,7 @@ class MessageInfoDialog extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              edit.text,
-                              style: theme.textTheme.bodySmall,
-                            ),
+                            Text(edit.text, style: theme.textTheme.bodySmall),
                             const SizedBox(height: 4),
                             Text(
                               'Edited ${_formatDateTime(edit.editedAt)}',
@@ -481,10 +465,7 @@ class _InfoSection extends StatelessWidget {
   final String title;
   final Widget child;
 
-  const _InfoSection({
-    required this.title,
-    required this.child,
-  });
+  const _InfoSection({required this.title, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -527,11 +508,7 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 16,
-            color: color,
-          ),
+          Icon(icon, size: 16, color: color),
           const SizedBox(width: 8),
           Text(
             label,

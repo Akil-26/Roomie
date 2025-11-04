@@ -21,7 +21,9 @@ class GroupCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.1),
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.1),
             spreadRadius: 1,
             blurRadius: 5,
             offset: const Offset(0, 2),
@@ -44,7 +46,10 @@ class GroupCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 14,
+                  ),
                 ),
               ],
             ),
@@ -53,19 +58,27 @@ class GroupCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(8.0),
             child: Image.network(
-              () { debugPrint('[GroupCard] Loading image: $imageUrl'); return imageUrl; }(),
+              () {
+                debugPrint('[GroupCard] Loading image: $imageUrl');
+                return imageUrl;
+              }(),
               width: 70,
               height: 70,
               fit: BoxFit.cover,
               // Add basic error handling & logging to diagnose missing images
               errorBuilder: (context, error, stack) {
-                debugPrint('[GroupCard] Failed to load image: $imageUrl error: $error');
+                debugPrint(
+                  '[GroupCard] Failed to load image: $imageUrl error: $error',
+                );
                 return Container(
                   width: 70,
                   height: 70,
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   alignment: Alignment.center,
-                  child: Icon(Icons.broken_image, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  child: Icon(
+                    Icons.broken_image,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 );
               },
               loadingBuilder: (context, child, loadingProgress) {

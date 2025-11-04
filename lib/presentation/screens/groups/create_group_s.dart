@@ -233,7 +233,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     }
 
     return Container(
-  color: colorScheme.surfaceContainerHighest,
+      color: colorScheme.surfaceContainerHighest,
       child: Icon(Icons.error, color: colorScheme.onSurfaceVariant),
     );
   }
@@ -280,10 +280,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     onTap: () => _removeImage(index),
                     child: Container(
                       decoration: BoxDecoration(
-            color: Theme.of(context)
-              .colorScheme
-              .scrim
-              .withValues(alpha: 0.54),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.scrim.withValues(alpha: 0.54),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -354,10 +353,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   child: Text(
                     'Select Roommates Count',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 Expanded(
@@ -399,9 +397,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                             foregroundColor:
                                 Theme.of(context).colorScheme.onSurface,
                             side: BorderSide(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outlineVariant,
+                              color:
+                                  Theme.of(context).colorScheme.outlineVariant,
                             ),
                           ),
                           child: const Text('Cancel'),
@@ -441,8 +438,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       },
     );
   }
-
-  
 
   Future<void> _updateAddressFromCoordinates(double lat, double lng) async {
     try {
@@ -683,35 +678,33 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colorScheme.outlineVariant, width: 1),
-        ),
-        child: TextField(
-          controller: controller,
-          maxLines: maxLines,
-          keyboardType: keyboardType,
-          readOnly: readOnly,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(
-              color: colorScheme.onSurfaceVariant,
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-            ),
-            border: InputBorder.none,
-            suffixIcon: suffixIcon,
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: maxLines > 1 ? 16 : 18,
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colorScheme.outlineVariant, width: 1),
+      ),
+      child: TextField(
+        controller: controller,
+        maxLines: maxLines,
+        keyboardType: keyboardType,
+        readOnly: readOnly,
+        onTap: readOnly ? onTap : null,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(
+            color: colorScheme.onSurfaceVariant,
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
           ),
-          style: TextStyle(color: colorScheme.onSurface, fontSize: 16),
+          border: InputBorder.none,
+          suffixIcon: suffixIcon,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: maxLines > 1 ? 16 : 18,
+          ),
         ),
+        style: TextStyle(color: colorScheme.onSurface, fontSize: 16),
       ),
     );
   }
@@ -726,7 +719,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     final colorScheme = theme.colorScheme;
     return Container(
       decoration: BoxDecoration(
-  color: colorScheme.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: colorScheme.outlineVariant, width: 1),
       ),
@@ -743,7 +736,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         ),
         isExpanded: true,
         underline: const SizedBox(),
-        icon: Icon(Icons.keyboard_arrow_down, color: colorScheme.onSurfaceVariant),
+        icon: Icon(
+          Icons.keyboard_arrow_down,
+          color: colorScheme.onSurfaceVariant,
+        ),
         dropdownColor: colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         items: items,
@@ -755,6 +751,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -762,7 +760,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       backgroundColor: colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+          padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.06, vertical: screenHeight * 0.03),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -775,7 +773,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   color: colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: screenHeight * 0.03),
 
               // Enhanced Image Picker
               GestureDetector(
@@ -802,10 +800,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                                 children: [
                                   Icon(
                                     Icons.cloud_upload_outlined,
-                                    size: 48,
+                                    size: screenWidth * 0.12,
                                     color: colorScheme.onSurfaceVariant,
                                   ),
-                                  SizedBox(height: 8),
+                                  SizedBox(height: screenHeight * 0.01),
                                   Text(
                                     'Upload Room Images',
                                     style: textTheme.bodyMedium?.copyWith(
@@ -814,7 +812,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                                       color: colorScheme.onSurfaceVariant,
                                     ),
                                   ),
-                                  SizedBox(height: 4),
+                                  SizedBox(height: screenHeight * 0.005),
                                   Text(
                                     'Supports: JPG, PNG, JPEG (max 6)',
                                     style: textTheme.bodySmall?.copyWith(
@@ -828,12 +826,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               // Image Previews
               _buildImagePreviews(),
 
-              const SizedBox(height: 24),
+              SizedBox(height: screenHeight * 0.03),
 
               // Group Name
               Text(
@@ -844,12 +842,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   color: colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: screenHeight * 0.01),
               _buildCleanTextField(
                 controller: _groupNameController,
                 hint: 'Enter a name for your group',
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               // Description
               Text(
@@ -860,13 +858,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   color: colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: screenHeight * 0.01),
               _buildCleanTextField(
                 controller: _descriptionController,
                 hint: 'Enter a brief description',
                 maxLines: 3,
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               // Room Type
               Text(
@@ -877,7 +875,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   color: colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: screenHeight * 0.01),
               _buildCleanDropdown<String>(
                 value: _selectedRoomType,
                 hint: 'Select Room Type',
@@ -894,7 +892,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   });
                 },
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               // Location
               Text(
@@ -905,22 +903,21 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   color: colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: screenHeight * 0.01),
               _buildCleanTextField(
                 controller: _addressController,
-                hint: 'Search or pick a location',
-                readOnly: true,
-                onTap: _openLocationPicker,
+                hint: 'Enter address or pick from map',
+                readOnly: false,
                 suffixIcon: InkWell(
                   onTap: _openLocationPicker,
                   child: Icon(
                     Icons.location_on_outlined,
                     color: colorScheme.primary,
-                    size: 22,
+                    size: screenWidth * 0.055,
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               // Location Details Row
               Row(
@@ -931,7 +928,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       hint: 'City',
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: screenWidth * 0.03),
                   Expanded(
                     child: _buildCleanTextField(
                       controller: _stateController,
@@ -940,14 +937,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               _buildCleanTextField(
                 controller: _pincodeController,
                 hint: 'Pincode',
                 keyboardType: TextInputType.number,
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               // Rent, Currency, and Roommates Row
               Row(
@@ -965,7 +962,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                             color: colorScheme.onSurface,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: screenHeight * 0.01),
                         _buildCleanTextField(
                           controller: _rentAmountController,
                           hint: 'Enter monthly...',
@@ -974,7 +971,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: screenWidth * 0.03),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -987,7 +984,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                             color: colorScheme.onSurface,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: screenHeight * 0.01),
                         _buildCleanTextField(
                           controller: _advanceAmountController,
                           hint: 'Enter refundable dep',
@@ -998,7 +995,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1014,7 +1011,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                             color: colorScheme.onSurface,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: screenHeight * 0.01),
                         _buildCleanDropdown<String>(
                           value: _selectedCurrency,
                           hint: 'Currency',
@@ -1034,7 +1031,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: screenWidth * 0.03),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1047,7 +1044,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                             color: colorScheme.onSurface,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: screenHeight * 0.01),
                         _buildCleanTextField(
                           controller: _capacityController,
                           hint: 'Enter count',
@@ -1058,16 +1055,19 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: screenHeight * 0.02),
 
               // Amenities Section
               Container(
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: colorScheme.outlineVariant, width: 1),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant,
+                    width: 1,
+                  ),
                 ),
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(screenWidth * 0.04),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1079,10 +1079,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                         color: colorScheme.onSurface,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: screenHeight * 0.015),
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                      spacing: screenWidth * 0.02,
+                      runSpacing: screenHeight * 0.01,
                       children:
                           _availableAmenities.map((amenity) {
                             final isSelected = _selectedAmenities.contains(
@@ -1104,22 +1104,25 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? colorScheme.primary
-                                      : colorScheme.surface,
+                                  color:
+                                      isSelected
+                                          ? colorScheme.primary
+                                          : colorScheme.surface,
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color: isSelected
-                                        ? colorScheme.primary
-                                        : colorScheme.outlineVariant,
+                                    color:
+                                        isSelected
+                                            ? colorScheme.primary
+                                            : colorScheme.outlineVariant,
                                   ),
                                 ),
                                 child: Text(
                                   amenity,
                                   style: TextStyle(
-                                    color: isSelected
-                                        ? colorScheme.onPrimary
-                                        : colorScheme.onSurfaceVariant,
+                                    color:
+                                        isSelected
+                                            ? colorScheme.onPrimary
+                                            : colorScheme.onSurfaceVariant,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1146,14 +1149,15 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-          disabledBackgroundColor:
-            colorScheme.onSurface.withValues(alpha: 0.12),
+                    disabledBackgroundColor: colorScheme.onSurface.withValues(
+                      alpha: 0.12,
+                    ),
                   ),
                   child:
                       _isLoading
                           ? SizedBox(
-                            height: 20,
-                            width: 20,
+                            height: screenWidth * 0.05,
+                            width: screenWidth * 0.05,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation<Color>(

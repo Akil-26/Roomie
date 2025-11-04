@@ -63,14 +63,20 @@ class ProfileImageService {
     // If the stored value already looks like a URL, return it directly.
     if (imageUrlOrLegacyId.startsWith('http')) return imageUrlOrLegacyId;
     // Legacy path unsupported now.
-    print('Legacy MongoDB imageId encountered: $imageUrlOrLegacyId (no lookup)');
+    print(
+      'Legacy MongoDB imageId encountered: $imageUrlOrLegacyId (no lookup)',
+    );
     return null;
   }
 
   // Legacy no-ops kept to avoid breaking old references.
-  Future<List<Map<String, dynamic>>> getUserProfileImageHistory(String userId) async => [];
-  Future<bool> setActiveProfileImage(String userId, String imageId) async => true;
+  Future<List<Map<String, dynamic>>> getUserProfileImageHistory(
+    String userId,
+  ) async => [];
+  Future<bool> setActiveProfileImage(String userId, String imageId) async =>
+      true;
   Future<bool> deleteProfileImage(String imageId, String userId) async => true;
   Future<void> cleanupOldProfileImages(String userId) async {}
-  Future<Map<String, dynamic>?> getProfileImageMetadata(String imageId) async => null;
+  Future<Map<String, dynamic>?> getProfileImageMetadata(String imageId) async =>
+      null;
 }

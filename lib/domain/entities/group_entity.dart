@@ -70,5 +70,6 @@ class GroupEntity {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'GroupEntity(id: $id, name: $name, members: ${members.length})';
+  String toString() =>
+      'GroupEntity(id: $id, name: $name, members: ${members.length})';
 }

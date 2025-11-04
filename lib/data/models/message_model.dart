@@ -18,16 +18,7 @@ List<dynamic> _safeListFromMap(dynamic value) {
   return [];
 }
 
-enum MessageType {
-  text,
-  image,
-  file,
-  audio,
-  voice,
-  poll,
-  todo,
-  system,
-}
+enum MessageType { text, image, file, audio, voice, poll, todo, system }
 
 enum MessageStatus { sending, sent, delivered, read }
 
@@ -54,7 +45,8 @@ class MessageAttachment {
 
   factory MessageAttachment.fromMap(Map<String, dynamic> map) {
     final typeString = (map['type'] ?? '').toString();
-    final attachmentType = AttachmentType.values.firstWhereOrNull(
+    final attachmentType =
+        AttachmentType.values.firstWhereOrNull(
           (value) => value.name == typeString,
         ) ??
         AttachmentType.other;
@@ -65,7 +57,8 @@ class MessageAttachment {
       type: attachmentType,
       mimeType: map['mimeType']?.toString(),
       size: map['size'] is int ? map['size'] as int : null,
-      durationInMs: map['durationInMs'] is int ? map['durationInMs'] as int : null,
+      durationInMs:
+          map['durationInMs'] is int ? map['durationInMs'] as int : null,
       thumbnailUrl: map['thumbnailUrl']?.toString(),
     );
   }
@@ -93,17 +86,15 @@ class MessageEditEntry {
     final timestamp = map['editedAt'];
     return MessageEditEntry(
       text: map['text']?.toString() ?? '',
-      editedAt: timestamp is int
-          ? DateTime.fromMillisecondsSinceEpoch(timestamp)
-          : DateTime.now(),
+      editedAt:
+          timestamp is int
+              ? DateTime.fromMillisecondsSinceEpoch(timestamp)
+              : DateTime.now(),
     );
   }
 
   Map<String, dynamic> toMap() {
-    return {
-      'text': text,
-      'editedAt': editedAt.millisecondsSinceEpoch,
-    };
+    return {'text': text, 'editedAt': editedAt.millisecondsSinceEpoch};
   }
 }
 
@@ -120,10 +111,11 @@ class PollOption {
 
   factory PollOption.fromMap(Map<String, dynamic> map) {
     final votesData = map['votes'];
-    final votesList = votesData is List
-        ? votesData.map((e) => e.toString()).toList()
-        : <String>[];
-    
+    final votesList =
+        votesData is List
+            ? votesData.map((e) => e.toString()).toList()
+            : <String>[];
+
     return PollOption(
       id: map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? '',
@@ -132,11 +124,7 @@ class PollOption {
   }
 
   Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'title': title,
-      'votes': votes.toList(),
-    };
+    return {'id': id, 'title': title, 'votes': votes.toList()};
   }
 
   PollOption copyWith({String? id, String? title, Set<String>? votes}) {
@@ -165,13 +153,15 @@ class PollData {
     final optionsData = _safeListFromMap(map['options']);
     return PollData(
       question: map['question']?.toString() ?? '',
-      options: optionsData
-          .map((item) => PollOption.fromMap(_safeCastMap(item)))
-          .toList(),
+      options:
+          optionsData
+              .map((item) => PollOption.fromMap(_safeCastMap(item)))
+              .toList(),
       allowMultiple: map['allowMultiple'] == true,
-      createdAt: map['createdAt'] is int
-          ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'] as int)
-          : DateTime.now(),
+      createdAt:
+          map['createdAt'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'] as int)
+              : DateTime.now(),
     );
   }
 
@@ -210,12 +200,14 @@ class TodoItem {
       title: map['title']?.toString() ?? '',
       isDone: map['isDone'] == true,
       assignedTo: map['assignedTo']?.toString(),
-      dueDate: map['dueDate'] is int
-          ? DateTime.fromMillisecondsSinceEpoch(map['dueDate'] as int)
-          : null,
-      completedAt: map['completedAt'] is int
-          ? DateTime.fromMillisecondsSinceEpoch(map['completedAt'] as int)
-          : null,
+      dueDate:
+          map['dueDate'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(map['dueDate'] as int)
+              : null,
+      completedAt:
+          map['completedAt'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(map['completedAt'] as int)
+              : null,
       completedBy: map['completedBy']?.toString(),
     );
   }
@@ -227,7 +219,8 @@ class TodoItem {
       'isDone': isDone,
       if (assignedTo != null) 'assignedTo': assignedTo,
       if (dueDate != null) 'dueDate': dueDate!.millisecondsSinceEpoch,
-      if (completedAt != null) 'completedAt': completedAt!.millisecondsSinceEpoch,
+      if (completedAt != null)
+        'completedAt': completedAt!.millisecondsSinceEpoch,
       if (completedBy != null) 'completedBy': completedBy,
     };
   }
@@ -263,9 +256,10 @@ class TodoData {
     final itemsData = _safeListFromMap(map['items']);
     return TodoData(
       title: map['title']?.toString() ?? '',
-      items: itemsData
-          .map((item) => TodoItem.fromMap(_safeCastMap(item)))
-          .toList(),
+      items:
+          itemsData
+              .map((item) => TodoItem.fromMap(_safeCastMap(item)))
+              .toList(),
     );
   }
 
@@ -326,8 +320,9 @@ class MessageModel {
     if (map['seenBy'] is Map) {
       (map['seenBy'] as Map).forEach((key, value) {
         if (value is int) {
-          seenByMap[key.toString()] =
-              DateTime.fromMillisecondsSinceEpoch(value);
+          seenByMap[key.toString()] = DateTime.fromMillisecondsSinceEpoch(
+            value,
+          );
         }
       });
     }
@@ -339,36 +334,46 @@ class MessageModel {
       senderImageUrl: map['senderImageUrl']?.toString(),
       receiverId: map['receiverId']?.toString() ?? '',
       message: map['message']?.toString() ?? '',
-      timestamp: map['timestamp'] is int
-          ? DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int)
-          : DateTime.now(),
+      timestamp:
+          map['timestamp'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int)
+              : DateTime.now(),
       isRead: map['isRead'] == true,
-      type: MessageType.values.firstWhereOrNull(
+      type:
+          MessageType.values.firstWhereOrNull(
             (value) => value.name == typeString,
           ) ??
           MessageType.text,
-      status: MessageStatus.values.firstWhereOrNull(
+      status:
+          MessageStatus.values.firstWhereOrNull(
             (value) => value.name == statusString,
           ) ??
           MessageStatus.sent,
       seenBy: seenByMap,
-      editedAt: map['editedAt'] is int
-          ? DateTime.fromMillisecondsSinceEpoch(map['editedAt'] as int)
-          : null,
-      editHistory: _safeListFromMap(map['editHistory'])
-          .map((item) => MessageEditEntry.fromMap(_safeCastMap(item)))
-          .toList(),
-      attachments: _safeListFromMap(map['attachments'])
-          .map((item) => MessageAttachment.fromMap(_safeCastMap(item)))
-          .toList(),
-      poll: map['poll'] != null
-          ? PollData.fromMap(_safeCastMap(map['poll']))
-          : null,
-      todo: map['todo'] != null
-          ? TodoData.fromMap(_safeCastMap(map['todo']))
-          : null,
+      editedAt:
+          map['editedAt'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(map['editedAt'] as int)
+              : null,
+      editHistory:
+          _safeListFromMap(map['editHistory'])
+              .map((item) => MessageEditEntry.fromMap(_safeCastMap(item)))
+              .toList(),
+      attachments:
+          _safeListFromMap(map['attachments'])
+              .map((item) => MessageAttachment.fromMap(_safeCastMap(item)))
+              .toList(),
+      poll:
+          map['poll'] != null
+              ? PollData.fromMap(_safeCastMap(map['poll']))
+              : null,
+      todo:
+          map['todo'] != null
+              ? TodoData.fromMap(_safeCastMap(map['todo']))
+              : null,
       extraData: _safeCastMap(map['extraData'] ?? const {}),
-      isSystemMessage: map['isSystemMessage'] == true || typeString == MessageType.system.name,
+      isSystemMessage:
+          map['isSystemMessage'] == true ||
+          typeString == MessageType.system.name,
     );
   }
 
@@ -384,12 +389,15 @@ class MessageModel {
       'type': type.name,
       'status': status.name,
       if (seenBy.isNotEmpty)
-        'seenBy': seenBy.map((key, value) => MapEntry(key, value.millisecondsSinceEpoch)),
+        'seenBy': seenBy.map(
+          (key, value) => MapEntry(key, value.millisecondsSinceEpoch),
+        ),
       if (editedAt != null) 'editedAt': editedAt!.millisecondsSinceEpoch,
       if (editHistory.isNotEmpty)
         'editHistory': editHistory.map((entry) => entry.toMap()).toList(),
       if (attachments.isNotEmpty)
-        'attachments': attachments.map((attachment) => attachment.toMap()).toList(),
+        'attachments':
+            attachments.map((attachment) => attachment.toMap()).toList(),
       if (poll != null) 'poll': poll!.toMap(),
       if (todo != null) 'todo': todo!.toMap(),
       if (extraData.isNotEmpty) 'extraData': extraData,

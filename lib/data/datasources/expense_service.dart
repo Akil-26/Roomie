@@ -83,7 +83,9 @@ class ExpenseService {
         receiptUrl: receiptUrl,
       );
 
-      final docRef = await _firestore.collection(_collection).add(expense.toFirestore());
+      final docRef = await _firestore
+          .collection(_collection)
+          .add(expense.toFirestore());
       print('✅ Expense created with ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
@@ -99,7 +101,12 @@ class ExpenseService {
         .where('groupId', isEqualTo: groupId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => ExpenseModel.fromFirestore(doc)).toList());
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map((doc) => ExpenseModel.fromFirestore(doc))
+                  .toList(),
+        );
   }
 
   // Get expenses where user is a participant
@@ -109,7 +116,12 @@ class ExpenseService {
         .where('participants', arrayContains: userId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => ExpenseModel.fromFirestore(doc)).toList());
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map((doc) => ExpenseModel.fromFirestore(doc))
+                  .toList(),
+        );
   }
 
   // Mark expense as paid by a user
@@ -139,7 +151,10 @@ class ExpenseService {
   }
 
   // Update expense status
-  Future<void> updateExpenseStatus(String expenseId, ExpenseStatus status) async {
+  Future<void> updateExpenseStatus(
+    String expenseId,
+    ExpenseStatus status,
+  ) async {
     try {
       await _firestore.collection(_collection).doc(expenseId).update({
         'status': status.toString(),
@@ -165,11 +180,12 @@ class ExpenseService {
   // Calculate user balances for a group
   Future<List<UserBalance>> calculateGroupBalances(String groupId) async {
     try {
-      final expenses = await _firestore
-          .collection(_collection)
-          .where('groupId', isEqualTo: groupId)
-          .where('status', isEqualTo: ExpenseStatus.pending.toString())
-          .get();
+      final expenses =
+          await _firestore
+              .collection(_collection)
+              .where('groupId', isEqualTo: groupId)
+              .where('status', isEqualTo: ExpenseStatus.pending.toString())
+              .get();
 
       final Map<String, UserBalance> balances = {};
 
@@ -192,7 +208,9 @@ class ExpenseService {
             );
           } else {
             // Get user name
-            final userDetails = await _firestoreService.getUserDetails(participantId);
+            final userDetails = await _firestoreService.getUserDetails(
+              participantId,
+            );
             final userName = userDetails?['username'] ?? 'Unknown User';
 
             balances[participantId] = UserBalance(
@@ -207,16 +225,17 @@ class ExpenseService {
       }
 
       // Calculate net balances
-      final balanceList = balances.values.map((balance) {
-        final netBalance = balance.totalPaid - balance.totalOwed;
-        return UserBalance(
-          userId: balance.userId,
-          userName: balance.userName,
-          totalOwed: balance.totalOwed,
-          totalPaid: balance.totalPaid,
-          netBalance: netBalance,
-        );
-      }).toList();
+      final balanceList =
+          balances.values.map((balance) {
+            final netBalance = balance.totalPaid - balance.totalOwed;
+            return UserBalance(
+              userId: balance.userId,
+              userName: balance.userName,
+              totalOwed: balance.totalOwed,
+              totalPaid: balance.totalPaid,
+              netBalance: netBalance,
+            );
+          }).toList();
 
       return balanceList;
     } catch (e) {
@@ -242,10 +261,11 @@ class ExpenseService {
   // Get expenses summary for dashboard
   Future<Map<String, dynamic>> getExpensesSummary(String groupId) async {
     try {
-      final snapshot = await _firestore
-          .collection(_collection)
-          .where('groupId', isEqualTo: groupId)
-          .get();
+      final snapshot =
+          await _firestore
+              .collection(_collection)
+              .where('groupId', isEqualTo: groupId)
+              .get();
 
       double totalExpenses = 0.0;
       double pendingAmount = 0.0;

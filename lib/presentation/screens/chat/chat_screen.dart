@@ -1,6 +1,9 @@
+// ignore_for_file: avoid_types_as_parameter_names
+
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -9,20 +12,20 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/chat_service.dart';
 
 import 'package:roomie/data/models/message_model.dart';
 import 'package:roomie/presentation/widgets/chat_input_widget.dart';
 import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
+import 'package:roomie/presentation/widgets/poll_todo_dialogs.dart';
+import 'package:roomie/presentation/screens/groups/current_group_detail_s.dart';
+import 'package:roomie/presentation/screens/profile/other_user_profile_s.dart';
 import 'package:uuid/uuid.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({
-    super.key,
-    required this.chatData,
-    required this.chatType,
-  });
+  const ChatScreen({super.key, required this.chatData, required this.chatType});
 
   final Map<String, dynamic> chatData;
   final String chatType;
@@ -51,14 +54,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Map<String, String> _memberNames = {};
   Map<String, String?> _memberImages = {};
   MessageModel? _editingMessage;
+  MessageModel? _selectedMessage; // For selection mode
   bool _isUploading = false;
   DateTime? _lastDeliverySync;
-  
+
   // Voice recording state
   bool _isRecording = false;
   Duration _recordDuration = Duration.zero;
   Timer? _recordTimer;
   DateTime? _lastReadSync;
+
+  // Audio playback state
+  AudioPlayer? _audioPlayer;
+  String? _currentPlayingAudioId;
+  bool _isAudioPlaying = false;
 
   @override
   void initState() {
@@ -83,19 +92,63 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
         final groupName = data['name'] ?? data['groupName'] ?? 'Group chat';
         final members = List<String>.from(data['members'] ?? const <String>[]);
-        final memberNames = Map<String, String>.from(
-          data['memberNames'] ?? const <String, String>{},
-        );
-        final memberImages = Map<String, String?>.from(
-          (data['memberImages'] ?? const <String, dynamic>{}).map(
-            (key, value) => MapEntry(key, value?.toString()),
-          ),
-        );
+        
+        // Fetch actual member names and images from Firestore
+        final memberNames = <String, String>{};
+        final memberImages = <String, String?>{};
+        
+        for (final memberId in members) {
+          try {
+            final userDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(memberId)
+                .get();
+            
+            if (userDoc.exists && userDoc.data() != null) {
+              final userData = userDoc.data()!;
+              // Try username first, then name, then email
+              final displayName = userData['username'] as String? ??
+                                 userData['name'] as String? ??
+                                 (userData['email'] as String?)?.split('@')[0] ??
+                                 'User';
+              memberNames[memberId] = displayName;
+              memberImages[memberId] = userData['profileImageUrl'] as String?;
+              debugPrint('Loaded member $memberId: $displayName');
+            }
+          } catch (e) {
+            debugPrint('Error loading member $memberId: $e');
+            memberNames[memberId] = 'User';
+          }
+        }
 
+        // Ensure current user is in the list
         if (!members.contains(currentUser.uid)) {
           members.add(currentUser.uid);
         }
-        memberNames[currentUser.uid] = currentUser.displayName ?? 'You';
+        
+        // Set current user display name if not already set
+        if (memberNames[currentUser.uid] == null) {
+          // Fetch current user's username from Firestore instead of using Auth displayName
+          try {
+            final currentUserDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(currentUser.uid)
+                .get();
+            
+            if (currentUserDoc.exists && currentUserDoc.data() != null) {
+              final currentUserData = currentUserDoc.data()!;
+              memberNames[currentUser.uid] = currentUserData['username'] as String? ??
+                                             currentUserData['name'] as String? ??
+                                             currentUser.email?.split('@')[0] ?? 
+                                             'You';
+            } else {
+              memberNames[currentUser.uid] = currentUser.email?.split('@')[0] ?? 'You';
+            }
+          } catch (e) {
+            debugPrint('Error loading current user data: $e');
+            memberNames[currentUser.uid] = currentUser.email?.split('@')[0] ?? 'You';
+          }
+        }
 
         _memberIds = members;
         _memberNames = memberNames;
@@ -115,7 +168,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           throw Exception('Missing user identifier');
         }
         final otherUserName = data['otherUserName'] ?? data['name'] ?? 'User';
-        final otherUserImage = data['otherUserImageUrl'] ??
+        final otherUserImage =
+            data['otherUserImageUrl'] ??
             data['profileImageUrl'] ??
             data['imageUrl'];
 
@@ -125,9 +179,28 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           otherUserImageUrl: otherUserImage?.toString(),
         );
 
+        // Fetch current user's username from Firestore for 1-on-1 chat
+        String currentUserDisplayName = 'You';
+        try {
+          final currentUserDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .get();
+          
+          if (currentUserDoc.exists && currentUserDoc.data() != null) {
+            final currentUserData = currentUserDoc.data()!;
+            currentUserDisplayName = currentUserData['username'] as String? ??
+                                    currentUserData['name'] as String? ??
+                                    currentUser.email?.split('@')[0] ?? 
+                                    'You';
+          }
+        } catch (e) {
+          debugPrint('Error loading current user data: $e');
+        }
+
         _memberIds = [currentUser.uid, otherUserId];
         _memberNames = {
-          currentUser.uid: currentUser.displayName ?? 'You',
+          currentUser.uid: currentUserDisplayName,
           otherUserId: otherUserName,
         };
         _memberImages = {otherUserId: otherUserImage?.toString()};
@@ -157,6 +230,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _recordTimer?.cancel();
+    _audioPlayer?.dispose();
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.dispose();
@@ -173,56 +247,65 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final Widget leadingAvatar;
 
     if (widget.chatType == 'group') {
-      title = widget.chatData['name'] ?? widget.chatData['groupName'] ?? 'Group chat';
-      final memberCount = _memberIds.isNotEmpty
-          ? _memberIds.length
-          : (widget.chatData['memberCount'] as int?) ?? 0;
+      title =
+          widget.chatData['name'] ??
+          widget.chatData['groupName'] ??
+          'Group chat';
+      final memberCount =
+          _memberIds.isNotEmpty
+              ? _memberIds.length
+              : (widget.chatData['memberCount'] as int?) ?? 0;
       subtitle = '$memberCount members';
-      final imageUrl = widget.chatData['imageUrl'] ?? widget.chatData['groupImageUrl'];
+      final imageUrl =
+          widget.chatData['imageUrl'] ?? widget.chatData['groupImageUrl'];
       leadingAvatar = CircleAvatar(
         radius: 20,
         backgroundColor: colorScheme.primaryContainer,
         backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-        child: imageUrl == null
-            ? Text(
-                title.isNotEmpty ? title.substring(0, 1).toUpperCase() : 'G',
-                style: textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
-                ),
-              )
-            : null,
+        child:
+            imageUrl == null
+                ? Text(
+                  title.isNotEmpty ? title.substring(0, 1).toUpperCase() : 'G',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+                : null,
       );
     } else {
       final otherId = _memberIds.firstWhere(
         (id) => id != _authService.currentUser?.uid,
-        orElse: () => widget.chatData['otherUserId'] ??
-            widget.chatData['userId'] ??
-            '',
+        orElse:
+            () =>
+                widget.chatData['otherUserId'] ??
+                widget.chatData['userId'] ??
+                '',
       );
-      title = _memberNames[otherId] ??
+      title =
+          _memberNames[otherId] ??
           widget.chatData['name'] ??
           widget.chatData['otherUserName'] ??
           'Chat';
-      subtitle = widget.chatData['status'] ??
-          widget.chatData['email'] ??
-          'Online';
-      final imageUrl = _memberImages[otherId] ??
+      subtitle = widget.chatData['status'] ?? 'Tap for info';
+      final imageUrl =
+          _memberImages[otherId] ??
           widget.chatData['imageUrl'] ??
           widget.chatData['profileImageUrl'];
       leadingAvatar = CircleAvatar(
         radius: 20,
         backgroundColor: colorScheme.primaryContainer,
         backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-        child: imageUrl == null
-            ? Text(
-                title.isNotEmpty ? title.substring(0, 1).toUpperCase() : 'U',
-                style: textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
-                ),
-              )
-            : null,
+        child:
+            imageUrl == null
+                ? Text(
+                  title.isNotEmpty ? title.substring(0, 1).toUpperCase() : 'U',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+                : null,
       );
     }
 
@@ -236,38 +319,131 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
         ),
         titleSpacing: 0,
-        title: Row(
-          children: [
-            leadingAvatar,
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.w600,
+        title: GestureDetector(
+          onTap: () {
+            // Navigate to group details or user profile
+            if (_isGroup) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CurrentGroupDetailScreen(
+                    group: widget.chatData,
+                  ),
+                ),
+              );
+            } else {
+              // Navigate to user profile
+              final otherId = _memberIds.firstWhere(
+                (id) => id != _authService.currentUser?.uid,
+                orElse: () => widget.chatData['otherUserId'] ?? '',
+              );
+              if (otherId.isNotEmpty) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => OtherUserProfileScreen(
+                      userId: otherId,
                     ),
                   ),
-                  Text(
-                    subtitle,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                );
+              }
+            }
+          },
+          child: Row(
+            children: [
+              leadingAvatar,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: textTheme.titleMedium?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                    Text(
+                      subtitle,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
-          IconButton(
-            onPressed: _showChatInfo,
-            icon: Icon(Icons.info_outline, color: colorScheme.onSurface),
-          ),
+          if (_selectedMessage != null)
+            // Selection mode actions
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_selectedMessage!.senderId == _authService.currentUser?.uid &&
+                    _selectedMessage!.type == MessageType.text)
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _editingMessage = _selectedMessage;
+                        _messageController.text = _selectedMessage!.message;
+                        _messageController.selection = TextSelection.collapsed(
+                          offset: _selectedMessage!.message.length,
+                        );
+                        _selectedMessage = null;
+                      });
+                    },
+                    icon: Icon(Icons.edit, color: colorScheme.primary),
+                    tooltip: 'Edit',
+                  ),
+                // Don't show copy for audio/voice messages
+                if (_selectedMessage!.message.isNotEmpty && 
+                    _selectedMessage!.type != MessageType.audio)
+                  IconButton(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _selectedMessage!.message));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Text copied'),
+                          duration: const Duration(seconds: 1),
+                          backgroundColor: colorScheme.primary,
+                        ),
+                      );
+                      setState(() => _selectedMessage = null);
+                    },
+                    icon: Icon(Icons.copy, color: colorScheme.primary),
+                    tooltip: 'Copy',
+                  ),
+                if (_selectedMessage!.senderId == _authService.currentUser?.uid)
+                  IconButton(
+                    onPressed: () {
+                      _showMessageInfo(_selectedMessage!);
+                      setState(() => _selectedMessage = null);
+                    },
+                    icon: Icon(Icons.info_outline, color: colorScheme.primary),
+                    tooltip: 'Info',
+                  ),
+                IconButton(
+                  onPressed: () {
+                    setState(() => _selectedMessage = null);
+                  },
+                  icon: Icon(Icons.close, color: colorScheme.onSurface),
+                  tooltip: 'Cancel',
+                ),
+              ],
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: IconButton(
+                onPressed: _showChatInfo,
+                icon: Icon(Icons.info_outline, color: colorScheme.onSurface),
+                tooltip: _isGroup ? 'Group Details' : 'User Details',
+              ),
+            ),
         ],
       ),
       body: Column(
@@ -301,7 +477,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       builder: (context, snapshot) {
         final colorScheme = Theme.of(context).colorScheme;
         final textTheme = Theme.of(context).textTheme;
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        
+        // Only show loading on the very first connection before any data
+        if (snapshot.connectionState == ConnectionState.waiting && 
+            snapshot.data == null) {
           return const Center(
             child: RoomieLoadingWidget(
               size: 60,
@@ -398,7 +577,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       children: [
         // Edit message banner
         if (_editingMessage != null) _buildEditingBanner(),
-        
+
         // Modern chat input widget
         ChatInputWidget(
           messageController: _messageController,
@@ -449,7 +628,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 _messageController.clear();
               });
             },
-            icon: Icon(Icons.close, size: 18, color: colorScheme.onPrimaryContainer),
+            icon: Icon(
+              Icons.close,
+              size: 18,
+              color: colorScheme.onPrimaryContainer,
+            ),
           ),
         ],
       ),
@@ -466,7 +649,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return;
     }
     final dir = await getTemporaryDirectory();
-    final path = p.join(dir.path, 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a');
+    final path = p.join(
+      dir.path,
+      'voice_${DateTime.now().millisecondsSinceEpoch}.m4a',
+    );
     await _voiceRecorder.start(
       const RecordConfig(
         encoder: AudioEncoder.aacLc,
@@ -503,7 +689,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     if (!send || recordedPath == null) {
       if (recordedPath != null) {
-        try { await File(recordedPath).delete(); } catch (_) {}
+        try {
+          await File(recordedPath).delete();
+        } catch (_) {}
       }
       return;
     }
@@ -517,7 +705,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         bytes: bytes,
         fileName: p.basename(recordedPath),
         contentType: 'audio/m4a',
-        folder: _isGroup ? 'groups/$_containerId/audio' : 'chats/$_containerId/audio',
+        folder:
+            _isGroup
+                ? 'groups/$_containerId/audio'
+                : 'chats/$_containerId/audio',
       );
       final attachment = MessageAttachment(
         url: url,
@@ -535,7 +726,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _showError('Failed to send voice message: $e');
     } finally {
       if (file != null) {
-        try { await file.delete(); } catch (_) {}
+        try {
+          await file.delete();
+        } catch (_) {}
       }
       if (mounted) setState(() => _isUploading = false);
     }
@@ -552,10 +745,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return;
     }
 
-    await _sendRichMessage(
-      text: text,
-      type: MessageType.text,
-    );
+    await _sendRichMessage(text: text, type: MessageType.text);
     _messageController.clear();
     setState(() {});
   }
@@ -639,10 +829,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final colorScheme = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          message,
-          style: TextStyle(color: colorScheme.onError),
-        ),
+        content: Text(message, style: TextStyle(color: colorScheme.onError)),
         backgroundColor: colorScheme.error,
       ),
     );
@@ -671,7 +858,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return;
     }
 
-    if (_lastDeliverySync == null || now.difference(_lastDeliverySync!) > debounce) {
+    if (_lastDeliverySync == null ||
+        now.difference(_lastDeliverySync!) > debounce) {
       _chatService.markMessagesAsDelivered(_containerId!);
       _lastDeliverySync = now;
     }
@@ -681,7 +869,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _lastReadSync = now;
     }
   }
-
 
   void _showAttachmentSheet() {
     FocusScope.of(context).unfocus();
@@ -709,7 +896,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 ListTile(
-                  leading: Icon(Icons.insert_drive_file, color: colorScheme.primary),
+                  leading: Icon(
+                    Icons.insert_drive_file,
+                    color: colorScheme.primary,
+                  ),
                   title: Text('Document', style: textTheme.bodyLarge),
                   onTap: () {
                     Navigator.pop(context);
@@ -717,7 +907,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   },
                 ),
                 ListTile(
-                  leading: Icon(Icons.photo_library, color: colorScheme.primary),
+                  leading: Icon(
+                    Icons.photo_library,
+                    color: colorScheme.primary,
+                  ),
                   title: Text('Gallery', style: textTheme.bodyLarge),
                   onTap: () {
                     Navigator.pop(context);
@@ -760,16 +953,24 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (_containerId == null) return;
 
     try {
-      final XFile? file = source == ImageSource.camera
-          ? await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 80)
-          : await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final XFile? file =
+          source == ImageSource.camera
+              ? await _imagePicker.pickImage(
+                source: ImageSource.camera,
+                imageQuality: 80,
+              )
+              : await _imagePicker.pickImage(
+                source: ImageSource.gallery,
+                imageQuality: 85,
+              );
 
       if (file == null) return;
 
       setState(() => _isUploading = true);
 
       final bytes = await file.readAsBytes();
-      final fileName = file.name.isNotEmpty ? file.name : 'image_${_uuid.v4()}.jpg';
+      final fileName =
+          file.name.isNotEmpty ? file.name : 'image_${_uuid.v4()}.jpg';
       final extension = p.extension(fileName).toLowerCase();
       final contentType = _inferImageContentType(extension);
 
@@ -777,7 +978,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         bytes: bytes,
         fileName: fileName,
         contentType: contentType,
-        folder: _isGroup ? 'groups/$_containerId/images' : 'chats/$_containerId/images',
+        folder:
+            _isGroup
+                ? 'groups/$_containerId/images'
+                : 'chats/$_containerId/images',
       );
 
       final attachment = MessageAttachment(
@@ -822,7 +1026,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       setState(() => _isUploading = true);
 
-      final fileName = picked.name.isNotEmpty ? picked.name : 'file_${_uuid.v4()}';
+      final fileName =
+          picked.name.isNotEmpty ? picked.name : 'file_${_uuid.v4()}';
       final extension = p.extension(fileName).toLowerCase();
       final contentType = _inferFileContentType(extension);
 
@@ -830,7 +1035,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         bytes: bytes,
         fileName: fileName,
         contentType: contentType,
-        folder: _isGroup ? 'groups/$_containerId/files' : 'chats/$_containerId/files',
+        folder:
+            _isGroup
+                ? 'groups/$_containerId/files'
+                : 'chats/$_containerId/files',
       );
 
       final attachment = MessageAttachment(
@@ -841,10 +1049,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         size: picked.size,
       );
 
-      await _sendRichMessage(
-        type: MessageType.file,
-        attachments: [attachment],
-      );
+      await _sendRichMessage(type: MessageType.file, attachments: [attachment]);
     } catch (e) {
       _showError('Failed to share file: $e');
     } finally {
@@ -852,281 +1057,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _showCreatePollSheet() {
-    final questionController = TextEditingController();
-    final optionControllers = <TextEditingController>[
-      TextEditingController(),
-      TextEditingController(),
-    ];
-    bool allowMultiple = false;
-
-    showModalBottomSheet<void>(
+  void _showCreatePollSheet() async {
+    // Use the hardened dialog widget to avoid controller lifecycle issues
+    final result = await showDialog<PollData>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        final colorScheme = Theme.of(context).colorScheme;
-        final textTheme = Theme.of(context).textTheme;
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final options = optionControllers
-                .map((controller) => controller.text.trim())
-                .where((text) => text.isNotEmpty)
-                .toList();
-            final canSubmit =
-                questionController.text.trim().isNotEmpty && options.length >= 2;
-
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                left: 20,
-                right: 20,
-                top: 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Create poll',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: questionController,
-                    decoration: const InputDecoration(
-                      labelText: 'Question',
-                    ),
-                    onChanged: (_) => setModalState(() {}),
-                  ),
-                  const SizedBox(height: 12),
-                  for (int i = 0; i < optionControllers.length; i++) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: optionControllers[i],
-                            decoration: InputDecoration(
-                              labelText: 'Option ${i + 1}',
-                            ),
-                            onChanged: (_) => setModalState(() {}),
-                          ),
-                        ),
-                        if (optionControllers.length > 2)
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              setModalState(() {
-                                optionControllers.removeAt(i).dispose();
-                              });
-                            },
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: optionControllers.length >= 6
-                          ? null
-                          : () {
-                              setModalState(() {
-                                optionControllers.add(TextEditingController());
-                              });
-                            },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add option'),
-                    ),
-                  ),
-                  SwitchListTile(
-                    value: allowMultiple,
-                    onChanged: (value) => setModalState(() {
-                      allowMultiple = value;
-                    }),
-                    title: const Text('Allow multiple votes'),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: canSubmit
-                        ? () {
-                            final poll = PollData(
-                              question: questionController.text.trim(),
-                              allowMultiple: allowMultiple,
-                              createdAt: DateTime.now(),
-                              options: optionControllers
-                                  .map((controller) => controller.text.trim())
-                                  .where((text) => text.isNotEmpty)
-                                  .map(
-                                    (text) => PollOption(
-                                      id: _uuid.v4(),
-                                      title: text,
-                                      votes: {},
-                                    ),
-                                  )
-                                  .toList(),
-                            );
-                            Navigator.pop(context);
-                            _sendRichMessage(
-                              type: MessageType.poll,
-                              poll: poll,
-                            );
-                          }
-                        : null,
-                    child: const Text('Send poll'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      questionController.dispose();
-      for (final controller in optionControllers) {
-        controller.dispose();
-      }
-    });
+      builder: (ctx) => const CreatePollDialog(),
+    );
+    if (!mounted || result == null) return;
+    await _sendRichMessage(type: MessageType.poll, poll: result);
   }
 
-  void _showCreateTodoSheet() {
-    final titleController = TextEditingController();
-    final itemControllers = <TextEditingController>[
-      TextEditingController(),
-      TextEditingController(),
-    ];
-
-    showModalBottomSheet<void>(
+  void _showCreateTodoSheet() async {
+    // Use the hardened dialog widget to avoid controller lifecycle issues
+    final result = await showDialog<TodoData>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        final colorScheme = Theme.of(context).colorScheme;
-        final textTheme = Theme.of(context).textTheme;
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final items = itemControllers
-                .map((controller) => controller.text.trim())
-                .where((text) => text.isNotEmpty)
-                .toList();
-            final canSubmit =
-                titleController.text.trim().isNotEmpty && items.isNotEmpty;
-
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                left: 20,
-                right: 20,
-                top: 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Create to-do list',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: titleController,
-                    decoration: const InputDecoration(
-                      labelText: 'List title',
-                    ),
-                    onChanged: (_) => setModalState(() {}),
-                  ),
-                  const SizedBox(height: 12),
-                  for (int i = 0; i < itemControllers.length; i++) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: itemControllers[i],
-                            decoration: InputDecoration(
-                              labelText: 'Task ${i + 1}',
-                            ),
-                            onChanged: (_) => setModalState(() {}),
-                          ),
-                        ),
-                        if (itemControllers.length > 1)
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              setModalState(() {
-                                itemControllers.removeAt(i).dispose();
-                              });
-                            },
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: itemControllers.length >= 8
-                          ? null
-                          : () {
-                              setModalState(() {
-                                itemControllers.add(TextEditingController());
-                              });
-                            },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add task'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: canSubmit
-                        ? () {
-                            final todo = TodoData(
-                              title: titleController.text.trim(),
-                              items: itemControllers
-                                  .map((controller) => controller.text.trim())
-                                  .where((text) => text.isNotEmpty)
-                                  .map(
-                                    (text) => TodoItem(
-                                      id: _uuid.v4(),
-                                      title: text,
-                                    ),
-                                  )
-                                  .toList(),
-                            );
-                            Navigator.pop(context);
-                            _sendRichMessage(
-                              type: MessageType.todo,
-                              todo: todo,
-                            );
-                          }
-                        : null,
-                    child: const Text('Send to-do list'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      titleController.dispose();
-      for (final controller in itemControllers) {
-        controller.dispose();
-      }
-    });
+      builder: (ctx) => const CreateTodoDialog(),
+    );
+    if (!mounted || result == null) return;
+    await _sendRichMessage(type: MessageType.todo, todo: result);
   }
 
   Widget _buildMessageBubble(MessageModel message) {
     final currentUserId = _authService.currentUser?.uid;
     final isMine = message.senderId == currentUserId;
-    final isSystem = message.isSystemMessage || message.type == MessageType.system;
+    final isSystem =
+        message.isSystemMessage || message.type == MessageType.system;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -1153,58 +1108,126 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       );
     }
 
-    final bubbleColor = isMine
-        ? colorScheme.primaryContainer
-        : colorScheme.surfaceContainerHighest;
-    final textColor = isMine
-        ? colorScheme.onPrimaryContainer
-        : colorScheme.onSurface;
+    final bubbleColor =
+        isMine
+            ? colorScheme.primaryContainer
+            : colorScheme.surfaceContainerHighest;
+    final textColor =
+        isMine ? colorScheme.onPrimaryContainer : colorScheme.onSurface;
+    
+    final isSelected = _selectedMessage?.id == message.id;
 
     return GestureDetector(
-      onLongPress: () => _onMessageLongPress(message, isMine),
+      onLongPress: () {
+        // Enter selection mode
+        setState(() {
+          _selectedMessage = message;
+        });
+      },
+      onTap: () {
+        // If in selection mode and clicking same message, deselect
+        if (_selectedMessage?.id == message.id) {
+          setState(() {
+            _selectedMessage = null;
+          });
+        }
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Align(
-          alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: bubbleColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(isMine ? 18 : 6),
-                  bottomRight: Radius.circular(isMine ? 6 : 18),
+        child: Column(
+          crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            // Sender name and time above message (WhatsApp style)
+            if (_isGroup)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: isMine ? 0 : 8,
+                  right: isMine ? 8 : 0,
+                  bottom: 4,
                 ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                child: Column(
-                  crossAxisAlignment:
-                      isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_isGroup && !isMine)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          _resolveUserName(message.senderId, fallback: message.senderName),
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                    Text(
+                      _resolveUserName(
+                        message.senderId,
+                        fallback: message.senderName,
+                      ),
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTimestamp(message.timestamp),
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                      ),
+                    ),
+                    // Show seen count only for current user's messages
+                    if (isMine) ...[
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.remove_red_eye,
+                        size: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${message.seenBy.keys.where((id) => id != message.senderId).length}',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 10,
                         ),
                       ),
+                    ],
+                  ],
+                ),
+              ),
+            Align(
+              alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.78,
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: isSelected 
+                        ? colorScheme.primary.withOpacity(0.2)
+                        : bubbleColor,
+                    border: isSelected
+                        ? Border.all(color: colorScheme.primary, width: 2)
+                        : null,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isMine ? 18 : 6),
+                      bottomRight: Radius.circular(isMine ? 6 : 18),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    child: Column(
+                      crossAxisAlignment:
+                          isMine
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                      children: [
                     if (message.attachments.isNotEmpty)
                       ...message.attachments.map(
                         (attachment) => Padding(
                           padding: const EdgeInsets.only(bottom: 8),
-                          child: _buildAttachmentPreview(attachment),
+                          child: _buildAttachmentPreview(attachment, message.id),
                         ),
                       ),
-                    if (message.message.isNotEmpty)
+                    // Don't show message text for audio/voice messages
+                    if (message.message.isNotEmpty && 
+                        (message.type != MessageType.audio || message.attachments.isEmpty))
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
@@ -1225,18 +1248,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         padding: const EdgeInsets.only(bottom: 4),
                         child: _buildTodoWidget(message),
                       ),
-                    _buildStatusRow(message, isMine),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildAttachmentPreview(MessageAttachment attachment) {
+  Widget _buildAttachmentPreview(MessageAttachment attachment, String messageId) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -1272,7 +1296,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.broken_image, color: colorScheme.onSurfaceVariant),
+                      Icon(
+                        Icons.broken_image,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         'Failed to load image',
@@ -1287,32 +1314,76 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ),
         );
-      // Voice/audio playback removed; show as generic file link
+      // Voice/audio playback - WhatsApp style
       case AttachmentType.voice:
       case AttachmentType.audio:
-        return InkWell(
-          onTap: () => _openExternalLink(attachment.url),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.audiotrack, color: colorScheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    attachment.name.isNotEmpty ? attachment.name : 'Audio',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+        final isThisAudioPlaying = _currentPlayingAudioId == messageId && _isAudioPlaying;
+        
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Play/pause button
+              InkWell(
+                onTap: () => _playPauseAudio(attachment.url, messageId),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isThisAudioPlaying ? Icons.pause : Icons.play_arrow,
+                    color: colorScheme.onPrimary,
+                    size: 24,
                   ),
                 ),
-                Icon(Icons.open_in_new, color: colorScheme.onSurfaceVariant),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              
+              // Waveform placeholder
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Waveform bars
+                    Row(
+                      children: List.generate(30, (index) {
+                        final heights = [3.0, 6.0, 9.0, 12.0, 8.0, 5.0];
+                        return Container(
+                          width: 3,
+                          height: heights[index % heights.length],
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          decoration: BoxDecoration(
+                            color: colorScheme.onSurface.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(width: 8),
+              
+              // Duration
+              Text(
+                attachment.durationInMs != null
+                    ? _formatAudioDuration(attachment.durationInMs!)
+                    : '0:02',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withOpacity(0.7),
+                ),
+              ),
+            ],
           ),
         );
       default:
@@ -1350,21 +1421,24 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildPollWidget(MessageModel message) {
     final poll = message.poll!;
     final currentUserId = _authService.currentUser?.uid;
-    final totalVotes =
-        poll.options.fold<int>(0, (sum, option) => sum + option.votes.length);
+    final totalVotes = poll.options.fold<int>(
+      0,
+      (sum, option) => sum + option.votes.length,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           poll.question,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         ...poll.options.map((option) {
-          final hasVoted = currentUserId != null && option.votes.contains(currentUserId);
+          final hasVoted =
+              currentUserId != null && option.votes.contains(currentUserId);
           final voteCount = option.votes.length;
           final ratio = totalVotes == 0 ? 0.0 : voteCount / totalVotes;
 
@@ -1381,12 +1455,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               },
               borderRadius: BorderRadius.circular(12),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-          color: hasVoted
-            // ignore: deprecated_member_use
-            ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
-                      : Theme.of(context).colorScheme.surfaceContainerHighest,
+                  color:
+                      hasVoted
+                          // ignore: deprecated_member_use
+                          ? Theme.of(
+                            context,
+                          ).colorScheme.primary.withOpacity(0.12)
+                          : Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
@@ -1412,12 +1494,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           );
         }),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Text(
-            totalVotes == 0 ? 'No votes yet' : '$totalVotes total votes',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // View votes button
+            TextButton(
+              onPressed: totalVotes > 0 ? () => _showPollVotes(message) : null,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                'View votes',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: totalVotes > 0 
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                ),
+              ),
+            ),
+            Text(
+              totalVotes == 0 ? 'No votes yet' : '$totalVotes total votes',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ],
         ),
       ],
     );
@@ -1432,9 +1533,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       children: [
         Text(
           todo.title,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
         ...todo.items.map(
@@ -1454,15 +1555,33 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             title: Text(
               item.title,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    decoration: item.isDone ? TextDecoration.lineThrough : null,
-                    color: item.isDone
+                decoration: item.isDone ? TextDecoration.lineThrough : null,
+                color:
+                    item.isDone
                         ? colorScheme.onSurfaceVariant
                         : colorScheme.onSurface,
-                  ),
+              ),
             ),
-            secondary: item.isDone && item.completedBy != null
-                ? Icon(Icons.check_circle, color: colorScheme.primary)
-                : null,
+            secondary:
+                item.isDone && item.completedBy != null
+                    ? CircleAvatar(
+                        radius: 14,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        backgroundImage: _memberImages[item.completedBy] != null
+                            ? NetworkImage(_memberImages[item.completedBy]!)
+                            : null,
+                        child: _memberImages[item.completedBy] == null
+                            ? Text(
+                                _resolveUserName(item.completedBy!)
+                                    .substring(0, 1)
+                                    .toUpperCase(),
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  fontSize: 10,
+                                ),
+                              )
+                            : null,
+                      )
+                    : null,
           ),
         ),
       ],
@@ -1475,9 +1594,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     final timeString = _formatTimestamp(message.timestamp);
     final isEdited = message.editedAt != null;
-    final seenCount = _isGroup
-        ? message.seenBy.keys.where((id) => id != message.senderId).length
-        : 0;
+    final seenCount =
+        _isGroup
+            ? message.seenBy.keys.where((id) => id != message.senderId).length
+            : 0;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1508,7 +1628,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ],
         if (_isGroup && seenCount > 0) ...[
           const SizedBox(width: 6),
-          Icon(Icons.remove_red_eye, size: 14, color: colorScheme.onSurfaceVariant),
+          Icon(
+            Icons.remove_red_eye,
+            size: 14,
+            color: colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 2),
           Text(
             '$seenCount',
@@ -1541,9 +1665,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       case MessageStatus.delivered:
         return colorScheme.onSurfaceVariant;
       case MessageStatus.sent:
-  return colorScheme.onSurfaceVariant.withOpacity(0.7);
+        return colorScheme.onSurfaceVariant.withOpacity(0.7);
       case MessageStatus.sending:
-  return colorScheme.onSurfaceVariant.withOpacity(0.6);
+        return colorScheme.onSurfaceVariant.withOpacity(0.6);
     }
   }
 
@@ -1564,9 +1688,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return '$day/$month/$year $time';
   }
 
+  String _formatAudioDuration(int milliseconds) {
+    final duration = Duration(milliseconds: milliseconds);
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds.remainder(60);
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
   void _onMessageLongPress(MessageModel message, bool isMine) {
     final actions = <_MessageAction>[
-      if (message.message.isNotEmpty)
+      // Don't show copy for audio/voice messages
+      if (message.message.isNotEmpty && message.type != MessageType.audio)
         _MessageAction(
           icon: Icons.copy,
           label: 'Copy text',
@@ -1662,8 +1794,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 Text(
                   'Edit history',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 if (entries.isEmpty)
@@ -1684,14 +1816,107 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _showPollVotes(MessageModel message) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final poll = message.poll!;
+
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Poll Votes',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  poll.question,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ...poll.options.map((option) {
+                  if (option.votes.isEmpty) return const SizedBox.shrink();
+                  
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        option.title,
+                        style: textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...option.votes.map((userId) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 16,
+                                backgroundColor: colorScheme.surfaceContainerHighest,
+                                backgroundImage: _memberImages[userId] != null
+                                    ? NetworkImage(_memberImages[userId]!)
+                                    : null,
+                                child: _memberImages[userId] == null
+                                    ? Text(
+                                        _resolveUserName(userId)
+                                            .substring(0, 1)
+                                            .toUpperCase(),
+                                        style: textTheme.bodySmall,
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _resolveUserName(userId),
+                                  style: textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showMessageInfo(MessageModel message) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    final seenEntries = message.seenBy.entries
-        .where((entry) => entry.key != message.senderId)
-        .toList()
-      ..sort((a, b) => a.value.compareTo(b.value));
+    final seenEntries =
+        message.seenBy.entries
+            .where((entry) => entry.key != message.senderId)
+            .toList()
+          ..sort((a, b) => a.value.compareTo(b.value));
 
     DateTime? readAt;
     if (!_isGroup) {
@@ -1709,9 +1934,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      isScrollControlled: true,
       builder: (context) {
         return SafeArea(
-          child: Padding(
+          child: Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1736,16 +1963,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       message.status.name.toUpperCase(),
                       style: textTheme.bodyLarge,
                     ),
-                    subtitle: Text(
-                      switch (message.status) {
-                        MessageStatus.read when readAt != null =>
-                          'Read at ${_formatFullDate(readAt)}',
-                        MessageStatus.read => 'Read',
-                        MessageStatus.delivered => 'Delivered',
-                        MessageStatus.sent => 'Sent',
-                        MessageStatus.sending => 'Sending…',
-                      },
-                    ),
+                    subtitle: Text(switch (message.status) {
+                      MessageStatus.read when readAt != null =>
+                        'Read at ${_formatFullDate(readAt)}',
+                      MessageStatus.read => 'Read',
+                      MessageStatus.delivered => 'Delivered',
+                      MessageStatus.sent => 'Sent',
+                      MessageStatus.sending => 'Sending…',
+                    }),
                   ),
                 if (_isGroup) ...[
                   Text(
@@ -1756,10 +1981,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 8),
                   if (seenEntries.isEmpty)
-                    Text(
-                      'No one has seen this yet',
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'No one has seen this yet',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     )
                   else
@@ -1770,7 +1998,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           radius: 18,
                           backgroundColor: colorScheme.surfaceContainerHighest,
                           child: Text(
-                            _resolveUserName(entry.key).substring(0, 1).toUpperCase(),
+                            _resolveUserName(
+                              entry.key,
+                            ).substring(0, 1).toUpperCase(),
                           ),
                         ),
                         title: Text(_resolveUserName(entry.key)),
@@ -1789,12 +2019,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _openImagePreview(String url) {
     showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(12),
-        child: InteractiveViewer(
-          child: Image.network(url, fit: BoxFit.contain),
-        ),
-      ),
+      builder:
+          (context) => Dialog(
+            insetPadding: const EdgeInsets.all(12),
+            child: InteractiveViewer(
+              child: Image.network(url, fit: BoxFit.contain),
+            ),
+          ),
     );
   }
 
@@ -1894,8 +2125,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    final groupName = widget.chatData['name'] ?? widget.chatData['groupName'] ?? 'Group';
-    final imageUrl = widget.chatData['imageUrl'] ?? widget.chatData['groupImageUrl'];
+    final groupName =
+        widget.chatData['name'] ?? widget.chatData['groupName'] ?? 'Group';
+    final imageUrl =
+        widget.chatData['imageUrl'] ?? widget.chatData['groupImageUrl'];
     final members = _memberIds;
 
     return SafeArea(
@@ -1920,16 +2153,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 CircleAvatar(
                   radius: 32,
                   backgroundColor: colorScheme.primaryContainer,
-                  backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-                  child: imageUrl == null
-                      ? Text(
-                          groupName.substring(0, 1).toUpperCase(),
-                          style: textTheme.headlineSmall?.copyWith(
-                            color: colorScheme.onPrimaryContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : null,
+                  backgroundImage:
+                      imageUrl != null ? NetworkImage(imageUrl) : null,
+                  child:
+                      imageUrl == null
+                          ? Text(
+                            groupName.substring(0, 1).toUpperCase(),
+                            style: textTheme.headlineSmall?.copyWith(
+                              color: colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                          : null,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -1963,17 +2198,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 12),
             ...members.map(
-              (memberId) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  backgroundColor: colorScheme.surfaceContainerHighest,
-                  child: Text(
-                    _resolveUserName(memberId).substring(0, 1).toUpperCase(),
+              (memberId) {
+                final isCurrentUser = _authService.currentUser?.uid == memberId;
+                final displayName = _resolveUserName(memberId);
+                
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    backgroundImage: _memberImages[memberId] != null 
+                        ? NetworkImage(_memberImages[memberId]!)
+                        : null,
+                    child: _memberImages[memberId] == null
+                        ? Text(
+                          displayName.substring(0, 1).toUpperCase(),
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                        : null,
                   ),
-                ),
-                title: Text(_resolveUserName(memberId)),
-                subtitle: Text(memberId),
-              ),
+                  title: Text(
+                    isCurrentUser ? '$displayName (You)' : displayName,
+                    style: textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -1991,7 +2244,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       orElse: () => widget.chatData['otherUserId'] ?? '',
     );
     final name = _resolveUserName(otherId, fallback: widget.chatData['name']);
-    final imageUrl = _memberImages[otherId] ??
+    final imageUrl =
+        _memberImages[otherId] ??
         widget.chatData['imageUrl'] ??
         widget.chatData['profileImageUrl'];
 
@@ -2017,16 +2271,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 CircleAvatar(
                   radius: 32,
                   backgroundColor: colorScheme.primaryContainer,
-                  backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-                  child: imageUrl == null
-                      ? Text(
-                          name.substring(0, 1).toUpperCase(),
-                          style: textTheme.headlineSmall?.copyWith(
-                            color: colorScheme.onPrimaryContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : null,
+                  backgroundImage:
+                      imageUrl != null ? NetworkImage(imageUrl) : null,
+                  child:
+                      imageUrl == null
+                          ? Text(
+                            name.substring(0, 1).toUpperCase(),
+                            style: textTheme.headlineSmall?.copyWith(
+                              color: colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                          : null,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -2101,7 +2357,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   // Modern chat widget handlers
 
-
   Future<void> _sendPollMessage(PollData pollData) async {
     if (!_initialized || _containerId == null) return;
 
@@ -2109,8 +2364,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (currentUser == null) return;
 
     try {
-
-
       if (_isGroup) {
         await _chatService.sendGroupMessage(
           groupId: _containerId!,
@@ -2148,8 +2401,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (currentUser == null) return;
 
     try {
-
-
       if (_isGroup) {
         await _chatService.sendGroupMessage(
           groupId: _containerId!,
@@ -2200,7 +2451,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         bytes: bytes,
         fileName: fileName,
         contentType: 'image/jpeg',
-        folder: _isGroup ? 'groups/$_containerId/images' : 'chats/$_containerId/images',
+        folder:
+            _isGroup
+                ? 'groups/$_containerId/images'
+                : 'chats/$_containerId/images',
       );
 
       final attachment = MessageAttachment(
@@ -2237,7 +2491,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         bytes: bytes,
         fileName: fileName,
         contentType: contentType,
-        folder: _isGroup ? 'groups/$_containerId/files' : 'chats/$_containerId/files',
+        folder:
+            _isGroup
+                ? 'groups/$_containerId/files'
+                : 'chats/$_containerId/files',
       );
 
       final attachment = MessageAttachment(
@@ -2248,10 +2505,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         size: bytes.lengthInBytes,
       );
 
-      await _sendRichMessage(
-        type: MessageType.file,
-        attachments: [attachment],
-      );
+      await _sendRichMessage(type: MessageType.file, attachments: [attachment]);
     } catch (e) {
       _showError('Failed to send file: $e');
     } finally {
@@ -2272,7 +2526,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         bytes: bytes,
         fileName: fileName,
         contentType: 'audio/mp4',
-        folder: _isGroup ? 'groups/$_containerId/audio' : 'chats/$_containerId/audio',
+        folder:
+            _isGroup
+                ? 'groups/$_containerId/audio'
+                : 'chats/$_containerId/audio',
       );
 
       final attachment = MessageAttachment(
@@ -2294,13 +2551,74 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _playPauseAudio(String audioUrl, String messageId) async {
+    try {
+      // If this audio is already playing, pause it
+      if (_currentPlayingAudioId == messageId && _isAudioPlaying) {
+        await _audioPlayer?.pause();
+        if (mounted) {
+          setState(() {
+            _isAudioPlaying = false;
+          });
+        }
+        return;
+      }
+
+      // If clicking on a paused audio, resume it
+      if (_currentPlayingAudioId == messageId && !_isAudioPlaying && _audioPlayer != null) {
+        await _audioPlayer!.play();
+        if (mounted) {
+          setState(() {
+            _isAudioPlaying = true;
+          });
+        }
+        return;
+      }
+
+      // If another audio is playing, stop it
+      if (_currentPlayingAudioId != null && _currentPlayingAudioId != messageId) {
+        await _audioPlayer?.stop();
+        await _audioPlayer?.dispose();
+        _audioPlayer = null;
+      }
+
+      // Create new player for new audio
+      _audioPlayer = AudioPlayer();
+      await _audioPlayer!.setUrl(audioUrl);
+      
+      // Listen for completion
+      _audioPlayer!.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          if (mounted) {
+            setState(() {
+              _isAudioPlaying = false;
+              _currentPlayingAudioId = null;
+            });
+          }
+        }
+      });
+
+      // Play the audio
+      await _audioPlayer!.play();
+      if (mounted) {
+        setState(() {
+          _isAudioPlaying = true;
+          _currentPlayingAudioId = messageId;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Failed to play audio: $e');
+      }
+    }
+  }
+
   void _showPollDialog() {
     _showCreatePollSheet();
   }
 
   void _showTodoDialog() {
-    // Use the existing poll sheet for now - can be customized later
-    _showCreatePollSheet();
+    _showCreateTodoSheet();
   }
 }
 
@@ -2315,5 +2633,3 @@ class _MessageAction {
   final String label;
   final VoidCallback onSelected;
 }
-
-

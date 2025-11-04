@@ -1,4 +1,3 @@
-
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,9 +24,10 @@ class ChatService {
   }) async {
     try {
       // Decide resource type based on contentType
-      final type = contentType.startsWith('image/')
-          ? CloudinaryResourceType.image
-          : contentType.startsWith('video/')
+      final type =
+          contentType.startsWith('image/')
+              ? CloudinaryResourceType.image
+              : contentType.startsWith('video/')
               ? CloudinaryResourceType.video
               : CloudinaryResourceType.raw;
 
@@ -65,22 +65,37 @@ class ChatService {
       final chatSnapshot = await chatRef.get();
 
       if (!chatSnapshot.exists) {
-        // Create new chat
+        // Create new chat - fetch current user's username from Firestore
+        String currentUserDisplayName = 'You';
+        try {
+          final currentUserDoc = await _firestore
+              .collection('users')
+              .doc(currentUser.uid)
+              .get();
+          
+          if (currentUserDoc.exists && currentUserDoc.data() != null) {
+            final currentUserData = currentUserDoc.data()!;
+            currentUserDisplayName = currentUserData['username'] as String? ??
+                                    currentUserData['name'] as String? ??
+                                    currentUser.email?.split('@')[0] ?? 
+                                    'You';
+          }
+        } catch (e) {
+          debugPrint('Error loading current user data: $e');
+        }
+
         final chatData = ChatModel(
           id: chatId,
           participants: participants,
           participantNames: {
-            currentUser.uid: currentUser.displayName ?? 'You',
+            currentUser.uid: currentUserDisplayName,
             otherUserId: otherUserName,
           },
           participantImages: {
             currentUser.uid: currentUser.photoURL,
             otherUserId: otherUserImageUrl,
           },
-          unreadCounts: {
-            currentUser.uid: 0,
-            otherUserId: 0,
-          },
+          unreadCounts: {currentUser.uid: 0, otherUserId: 0},
         );
 
         await chatRef.set(chatData.toMap());
@@ -128,8 +143,10 @@ class ChatService {
         );
 
         if (!isSystemMessage && currentUser != null) {
-          receiverId = chatData.participants
-              .firstWhere((id) => id != currentUser.uid, orElse: () => '');
+          receiverId = chatData.participants.firstWhere(
+            (id) => id != currentUser.uid,
+            orElse: () => '',
+          );
 
           updatedUnreadCounts = Map<String, int>.from(chatData.unreadCounts);
           if (receiverId.isNotEmpty) {
@@ -150,7 +167,8 @@ class ChatService {
         senderName: senderName,
         senderImageUrl: senderImageUrl,
         receiverId: receiverId,
-        message: message ?? (attachments.isNotEmpty ? attachments.first.name : ''),
+        message:
+            message ?? (attachments.isNotEmpty ? attachments.first.name : ''),
         timestamp: now,
         type: type,
         status: isSystemMessage ? MessageStatus.sent : MessageStatus.sent,
@@ -159,9 +177,10 @@ class ChatService {
         todo: todo,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
-        seenBy: isSystemMessage || currentUser == null
-            ? {}
-            : {currentUser.uid: now},
+        seenBy:
+            isSystemMessage || currentUser == null
+                ? {}
+                : {currentUser.uid: now},
       );
 
       final messageRef = _database.ref('chats/$chatId/messages/$messageId');
@@ -187,23 +206,27 @@ class ChatService {
 
   /// Get messages stream for a chat
   Stream<List<MessageModel>> getMessagesStream(String chatId) {
-    return _database.ref('chats/$chatId/messages')
+    return _database
+        .ref('chats/$chatId/messages')
         .orderByChild('timestamp')
         .onValue
         .map((event) {
-      final data = event.snapshot.value;
-      if (data == null) return <MessageModel>[];
+          final data = event.snapshot.value;
+          if (data == null) return <MessageModel>[];
 
-      final messagesMap = Map<String, dynamic>.from(data as Map);
-      final messages = messagesMap.entries.map((entry) {
-        final messageData = Map<String, dynamic>.from(entry.value as Map);
-        return MessageModel.fromMap(messageData, entry.key);
-      }).toList();
+          final messagesMap = Map<String, dynamic>.from(data as Map);
+          final messages =
+              messagesMap.entries.map((entry) {
+                final messageData = Map<String, dynamic>.from(
+                  entry.value as Map,
+                );
+                return MessageModel.fromMap(messageData, entry.key);
+              }).toList();
 
-      // Sort by timestamp ascending (oldest first for chat display)
-      messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return messages;
-    });
+          // Sort by timestamp ascending (oldest first for chat display)
+          messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          return messages;
+        });
   }
 
   /// Get user's chats stream
@@ -211,9 +234,7 @@ class ChatService {
     final currentUser = _authService.currentUser;
     if (currentUser == null) return Stream.value([]);
 
-    return _database.ref('chats')
-        .onValue
-        .map((event) {
+    return _database.ref('chats').onValue.map((event) {
       final data = event.snapshot.value;
       if (data == null) return <ChatModel>[];
 
@@ -223,7 +244,7 @@ class ChatService {
       for (final entry in chatsMap.entries) {
         final chatData = Map<String, dynamic>.from(entry.value as Map);
         final chat = ChatModel.fromMap(chatData, entry.key);
-        
+
         // Only include chats where current user is a participant
         if (chat.participants.contains(currentUser.uid)) {
           chats.add(chat);
@@ -232,8 +253,10 @@ class ChatService {
 
       // Sort by last message time descending
       chats.sort((a, b) {
-        final aTime = a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final bTime = b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final aTime =
+            a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime =
+            b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
         return bTime.compareTo(aTime);
       });
 
@@ -248,9 +271,7 @@ class ChatService {
       if (currentUser == null) return;
 
       final chatRef = _database.ref('chats/$chatId');
-      await chatRef.update({
-        'unreadCounts/${currentUser.uid}': 0,
-      });
+      await chatRef.update({'unreadCounts/${currentUser.uid}': 0});
 
       debugPrint('Messages marked as read for chat: $chatId');
 
@@ -295,7 +316,8 @@ class ChatService {
         final senderId = messageData['senderId']?.toString();
         if (senderId == currentUser.uid) return;
 
-        final status = messageData['status']?.toString() ?? MessageStatus.sent.name;
+        final status =
+            messageData['status']?.toString() ?? MessageStatus.sent.name;
         if (status == MessageStatus.sent.name) {
           updates['$messageId/status'] = MessageStatus.delivered.name;
         }
@@ -330,7 +352,9 @@ class ChatService {
       final now = DateTime.now();
 
       final history = List<MessageEditEntry>.from(existingMessage.editHistory);
-      history.add(MessageEditEntry(text: existingMessage.message, editedAt: now));
+      history.add(
+        MessageEditEntry(text: existingMessage.message, editedAt: now),
+      );
       if (history.length > 10) {
         history.removeAt(0);
       }
@@ -343,20 +367,21 @@ class ChatService {
         todo: todo ?? existingMessage.todo,
         editHistory: history,
         editedAt: now,
-        extraData: extraData != null
-            ? {...existingMessage.extraData, ...extraData}
-            : existingMessage.extraData,
+        extraData:
+            extraData != null
+                ? {...existingMessage.extraData, ...extraData}
+                : existingMessage.extraData,
       );
 
       await messageRef.update({
         'message': updatedMessage.message,
-        'attachments': updatedAttachments.map((attachment) => attachment.toMap()).toList(),
+        'attachments':
+            updatedAttachments.map((attachment) => attachment.toMap()).toList(),
         'poll': updatedMessage.poll?.toMap(),
         'todo': updatedMessage.todo?.toMap(),
         'editedAt': now.millisecondsSinceEpoch,
         'editHistory': history.map((entry) => entry.toMap()).toList(),
-        if (extraData != null)
-          'extraData': updatedMessage.extraData,
+        if (extraData != null) 'extraData': updatedMessage.extraData,
       });
 
       final chatRef = _database.ref('chats/$chatId');
@@ -365,7 +390,8 @@ class ChatService {
         final chatData = Map<String, dynamic>.from(chatSnapshot.value as Map);
         final lastMessageTime = chatData['lastMessageTime'] as int?;
         final lastSenderId = chatData['lastSenderId']?.toString();
-        if (lastMessageTime == updatedMessage.timestamp.millisecondsSinceEpoch &&
+        if (lastMessageTime ==
+                updatedMessage.timestamp.millisecondsSinceEpoch &&
             lastSenderId == updatedMessage.senderId) {
           await chatRef.update({
             'lastMessage': updatedMessage.previewText(),
@@ -447,9 +473,10 @@ class ChatService {
       final now = DateTime.now();
 
       final senderId = isSystemMessage ? 'system' : currentUser!.uid;
-      final senderName = isSystemMessage
-          ? 'System'
-          : (currentUser?.displayName ?? currentUser?.email ?? 'Unknown');
+      final senderName =
+          isSystemMessage
+              ? 'System'
+              : (currentUser?.displayName ?? currentUser?.email ?? 'Unknown');
       final senderImageUrl = isSystemMessage ? null : currentUser?.photoURL;
 
       final messageModel = MessageModel(
@@ -458,7 +485,8 @@ class ChatService {
         senderName: senderName,
         senderImageUrl: senderImageUrl,
         receiverId: '',
-        message: message ?? (attachments.isNotEmpty ? attachments.first.name : ''),
+        message:
+            message ?? (attachments.isNotEmpty ? attachments.first.name : ''),
         timestamp: now,
         type: type,
         status: MessageStatus.sent,
@@ -467,30 +495,28 @@ class ChatService {
         todo: todo,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
-        seenBy: isSystemMessage || currentUser == null
-            ? {}
-            : {currentUser.uid: now},
+        seenBy:
+            isSystemMessage || currentUser == null
+                ? {}
+                : {currentUser.uid: now},
       );
 
-      final messageRef =
-          _database.ref('groupChats/$groupId/messages/$messageId');
-      await messageRef.set({
-        ...messageModel.toMap(),
-        'id': messageId,
-      });
+      final messageRef = _database.ref(
+        'groupChats/$groupId/messages/$messageId',
+      );
+      await messageRef.set({...messageModel.toMap(), 'id': messageId});
 
       if (!isSystemMessage && currentUser != null) {
         final chatRef = _database.ref('groupChats/$groupId');
         final chatSnapshot = await chatRef.get();
 
         if (chatSnapshot.exists) {
-          final chatData = Map<String, dynamic>.from(
-            chatSnapshot.value as Map,
-          );
+          final chatData = Map<String, dynamic>.from(chatSnapshot.value as Map);
           final members = List<String>.from(chatData['members'] ?? []);
           final unreadCounts = Map<String, int>.from(
-            Map<String, dynamic>.from(chatData['unreadCounts'] ?? {})
-                .map((key, value) => MapEntry(key, (value as num).toInt())),
+            Map<String, dynamic>.from(
+              chatData['unreadCounts'] ?? {},
+            ).map((key, value) => MapEntry(key, (value as num).toInt())),
           );
 
           for (final memberId in members) {
@@ -519,22 +545,26 @@ class ChatService {
 
   /// Get group messages stream
   Stream<List<MessageModel>> getGroupMessagesStream(String groupId) {
-    return _database.ref('groupChats/$groupId/messages')
+    return _database
+        .ref('groupChats/$groupId/messages')
         .orderByChild('timestamp')
         .onValue
         .map((event) {
-      final data = event.snapshot.value;
-      if (data == null) return <MessageModel>[];
+          final data = event.snapshot.value;
+          if (data == null) return <MessageModel>[];
 
-      final messagesMap = Map<String, dynamic>.from(data as Map);
-      final messages = messagesMap.entries.map((entry) {
-        final messageData = Map<String, dynamic>.from(entry.value as Map);
-        return MessageModel.fromMap(messageData, entry.key);
-      }).toList();
+          final messagesMap = Map<String, dynamic>.from(data as Map);
+          final messages =
+              messagesMap.entries.map((entry) {
+                final messageData = Map<String, dynamic>.from(
+                  entry.value as Map,
+                );
+                return MessageModel.fromMap(messageData, entry.key);
+              }).toList();
 
-      messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return messages;
-    });
+          messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          return messages;
+        });
   }
 
   /// Mark group messages as read
@@ -544,9 +574,7 @@ class ChatService {
       if (currentUser == null) return;
 
       final chatRef = _database.ref('groupChats/$groupId');
-      await chatRef.update({
-        'unreadCounts/${currentUser.uid}': 0,
-      });
+      await chatRef.update({'unreadCounts/${currentUser.uid}': 0});
 
       debugPrint('Group messages marked as read for chat: $groupId');
 
@@ -584,8 +612,9 @@ class ChatService {
     Map<String, dynamic>? extraData,
   }) async {
     try {
-      final messageRef =
-          _database.ref('groupChats/$groupId/messages/$messageId');
+      final messageRef = _database.ref(
+        'groupChats/$groupId/messages/$messageId',
+      );
       final snapshot = await messageRef.get();
       if (!snapshot.exists) {
         throw Exception('Message not found');
@@ -596,7 +625,9 @@ class ChatService {
       final now = DateTime.now();
 
       final history = List<MessageEditEntry>.from(existingMessage.editHistory);
-      history.add(MessageEditEntry(text: existingMessage.message, editedAt: now));
+      history.add(
+        MessageEditEntry(text: existingMessage.message, editedAt: now),
+      );
       if (history.length > 10) {
         history.removeAt(0);
       }
@@ -609,20 +640,21 @@ class ChatService {
         todo: todo ?? existingMessage.todo,
         editHistory: history,
         editedAt: now,
-        extraData: extraData != null
-            ? {...existingMessage.extraData, ...extraData}
-            : existingMessage.extraData,
+        extraData:
+            extraData != null
+                ? {...existingMessage.extraData, ...extraData}
+                : existingMessage.extraData,
       );
 
       await messageRef.update({
         'message': updatedMessage.message,
-        'attachments': updatedAttachments.map((attachment) => attachment.toMap()).toList(),
+        'attachments':
+            updatedAttachments.map((attachment) => attachment.toMap()).toList(),
         'poll': updatedMessage.poll?.toMap(),
         'todo': updatedMessage.todo?.toMap(),
         'editedAt': now.millisecondsSinceEpoch,
         'editHistory': history.map((entry) => entry.toMap()).toList(),
-        if (extraData != null)
-          'extraData': updatedMessage.extraData,
+        if (extraData != null) 'extraData': updatedMessage.extraData,
       });
 
       final chatRef = _database.ref('groupChats/$groupId');
@@ -631,7 +663,8 @@ class ChatService {
         final chatData = Map<String, dynamic>.from(chatSnapshot.value as Map);
         final lastMessageTime = chatData['lastMessageTime'] as int?;
         final lastSenderId = chatData['lastSenderId']?.toString();
-        if (lastMessageTime == updatedMessage.timestamp.millisecondsSinceEpoch &&
+        if (lastMessageTime ==
+                updatedMessage.timestamp.millisecondsSinceEpoch &&
             lastSenderId == updatedMessage.senderId) {
           await chatRef.update({
             'lastMessage': updatedMessage.previewText(),
@@ -656,7 +689,9 @@ class ChatService {
       if (currentUser == null) return;
 
       final basePath =
-          isGroup ? 'groupChats/$containerId/messages' : 'chats/$containerId/messages';
+          isGroup
+              ? 'groupChats/$containerId/messages'
+              : 'chats/$containerId/messages';
       final messageRef = _database.ref('$basePath/$messageId');
       final snapshot = await messageRef.get();
       if (!snapshot.exists) {
@@ -704,9 +739,7 @@ class ChatService {
         createdAt: poll.createdAt,
       );
 
-      await messageRef.update({
-        'poll': updatedPoll.toMap(),
-      });
+      await messageRef.update({'poll': updatedPoll.toMap()});
     } catch (e) {
       debugPrint('Error toggling poll vote: $e');
       rethrow;
@@ -725,7 +758,9 @@ class ChatService {
       if (currentUser == null) return;
 
       final basePath =
-          isGroup ? 'groupChats/$containerId/messages' : 'chats/$containerId/messages';
+          isGroup
+              ? 'groupChats/$containerId/messages'
+              : 'chats/$containerId/messages';
       final messageRef = _database.ref('$basePath/$messageId');
       final snapshot = await messageRef.get();
       if (!snapshot.exists) {
@@ -781,19 +816,17 @@ class ChatService {
       final currentUser = _authService.currentUser;
       if (currentUser == null) return [];
 
-      final usersQuery = await _firestore
-          .collection('users')
-          .where('username', isGreaterThanOrEqualTo: query)
-          .where('username', isLessThanOrEqualTo: '$query\uf8ff')
-          .limit(20)
-          .get();
+      final usersQuery =
+          await _firestore
+              .collection('users')
+              .where('username', isGreaterThanOrEqualTo: query)
+              .where('username', isLessThanOrEqualTo: '$query\uf8ff')
+              .limit(20)
+              .get();
 
       return usersQuery.docs
           .where((doc) => doc.id != currentUser.uid) // Exclude current user
-          .map((doc) => {
-                'id': doc.id,
-                ...doc.data(),
-              })
+          .map((doc) => {'id': doc.id, ...doc.data()})
           .toList();
     } catch (e) {
       debugPrint('Error searching users: $e');

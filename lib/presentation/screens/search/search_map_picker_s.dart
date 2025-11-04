@@ -71,7 +71,7 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
         circleId: const CircleId('searchRadius'),
         center: _selectedLocation,
         radius: _radiusKm * 1000, // Convert km to meters
-  fillColor: Colors.blue.withValues(alpha: 0.2),
+        fillColor: Colors.blue.withValues(alpha: 0.2),
         strokeColor: Colors.blue,
         strokeWidth: 2,
       );
@@ -100,9 +100,9 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Search failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Search failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSearching = false);
@@ -124,10 +124,11 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
         final area = placemark.subLocality ?? '';
 
         setState(() {
-          _locationName = [name, area, locality]
-              .where((s) => s.isNotEmpty)
-              .take(2)
-              .join(', ');
+          _locationName = [
+            name,
+            area,
+            locality,
+          ].where((s) => s.isNotEmpty).take(2).join(', ');
         });
         _updateMarkerAndCircle();
       }
@@ -170,9 +171,9 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       setState(() => _isLoadingLocation = false);
@@ -238,18 +239,24 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
                     textAlignVertical: TextAlignVertical.center,
                     decoration: InputDecoration(
                       hintText: 'Search places…',
-                      prefixIcon: Icon(Icons.search, color: cs.onSurfaceVariant),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: cs.onSurfaceVariant,
+                      ),
                       suffixIcon: IconButton(
-                        icon: _isSearching
-                            ? SizedBox(
-                                height: 18,
-                                width: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation(cs.primary),
-                                ),
-                              )
-                            : Icon(Icons.arrow_forward, color: cs.primary),
+                        icon:
+                            _isSearching
+                                ? SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation(
+                                      cs.primary,
+                                    ),
+                                  ),
+                                )
+                                : Icon(Icons.arrow_forward, color: cs.primary),
                         onPressed: _isSearching ? null : _searchPlace,
                       ),
                       filled: true,
@@ -275,7 +282,10 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
                       // Keep chip from growing too wide; leave margins
                       maxWidth: MediaQuery.of(context).size.width - 64,
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: cs.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(20),
@@ -290,10 +300,14 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
                           child: Text(
                             _isLoadingAddress
                                 ? 'Finding place…'
-                                : (_locationName.isEmpty ? 'Tap on map to select' : _locationName),
+                                : (_locationName.isEmpty
+                                    ? 'Tap on map to select'
+                                    : _locationName),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -312,7 +326,10 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: cs.primary,
                     borderRadius: BorderRadius.circular(12),
@@ -375,16 +392,19 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
                   shape: const CircleBorder(),
                   elevation: 3,
                   child: IconButton(
-                    icon: _isLoadingLocation
-                        ? SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(cs.onPrimary),
-                            ),
-                          )
-                        : Icon(Icons.my_location, color: cs.onPrimary),
+                    icon:
+                        _isLoadingLocation
+                            ? SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  cs.onPrimary,
+                                ),
+                              ),
+                            )
+                            : Icon(Icons.my_location, color: cs.onPrimary),
                     onPressed: _isLoadingLocation ? null : _getCurrentLocation,
                     tooltip: 'Current location',
                   ),
@@ -400,11 +420,13 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
   Future<void> _openStreetView() async {
     final lat = _selectedLocation.latitude;
     final lng = _selectedLocation.longitude;
-  final streetViewAppUri = Uri.parse('google.streetview:cbll=$lat,$lng');
-  final mapsPanoWebUri = Uri.parse(
-    'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=$lat,$lng');
-  final mapsPlaceWebUri = Uri.parse(
-    'https://maps.google.com/?q=&layer=c&cbll=$lat,$lng');
+    final streetViewAppUri = Uri.parse('google.streetview:cbll=$lat,$lng');
+    final mapsPanoWebUri = Uri.parse(
+      'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=$lat,$lng',
+    );
+    final mapsPlaceWebUri = Uri.parse(
+      'https://maps.google.com/?q=&layer=c&cbll=$lat,$lng',
+    );
 
     try {
       // Try Street View App deep link first
@@ -417,7 +439,10 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
         }
         // As a last resort, open maps with Street View layer
         else if (await canLaunchUrl(mapsPlaceWebUri)) {
-          await launchUrl(mapsPlaceWebUri, mode: LaunchMode.externalApplication);
+          await launchUrl(
+            mapsPlaceWebUri,
+            mode: LaunchMode.externalApplication,
+          );
         }
         // If nothing can be launched, show a message
         else if (mounted) {
@@ -428,9 +453,9 @@ class _SearchMapPickerScreenState extends State<SearchMapPickerScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }

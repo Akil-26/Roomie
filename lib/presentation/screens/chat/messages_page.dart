@@ -17,6 +17,10 @@ class _MessagesPageState extends State<MessagesPage> {
   String _selectedFilter = 'all'; // all, groups, individual
 
   String _searchQuery = '';
+  
+  // Cache screen dimensions on first build
+  double? _cachedScreenHeight;
+  double? _cachedScreenWidth;
 
   @override
   void dispose() {
@@ -71,8 +75,18 @@ class _MessagesPageState extends State<MessagesPage> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    
+    // Cache screen dimensions on first build (before keyboard appears)
+    _cachedScreenHeight ??= MediaQuery.of(context).size.height;
+    _cachedScreenWidth ??= MediaQuery.of(context).size.width;
+    
+    // Use cached values which won't change
+    final screenHeight = _cachedScreenHeight!;
+    final screenWidth = _cachedScreenWidth!;
+    
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      resizeToAvoidBottomInset: false,
       body: Column(
         children: [
           // Header with title
@@ -80,11 +94,11 @@ class _MessagesPageState extends State<MessagesPage> {
             color: colorScheme.surface,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.only(
-                  left: 24.0,
-                  right: 24.0,
-                  top: 20.0,
-                  bottom: 16.0,
+                padding: EdgeInsets.only(
+                  left: screenWidth * 0.04,  // 4% of screen width
+                  right: 0.0,
+                  top: screenHeight * 0.012,  // 1.2% of screen height
+                  bottom: 0,
                 ),
                 child: Row(
                   children: [
@@ -97,7 +111,6 @@ class _MessagesPageState extends State<MessagesPage> {
                         ),
                       ),
                     ),
-
                   ],
                 ),
               ),
@@ -107,17 +120,21 @@ class _MessagesPageState extends State<MessagesPage> {
           // Search bar and Filter tabs on same row
           Container(
             color: Colors.transparent,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+            padding: EdgeInsets.only(
+              left: screenWidth * 0.03,
+              right: screenWidth * 0.03,
+              bottom: screenHeight * 0.0005,  // 0.5% very small bottom padding
+            ),
             child: Row(
               children: [
                 // Search bar (left side)
                 Expanded(
                   flex: 1,
                   child: Container(
-                    height: 44,
+                    height: screenHeight * 0.055,  // 5.5% of screen height
                     decoration: BoxDecoration(
                       color: Colors.transparent,
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(screenHeight * 0.0275),
                       border: Border.all(
                         color: colorScheme.outlineVariant,
                         width: 1,
@@ -127,51 +144,48 @@ class _MessagesPageState extends State<MessagesPage> {
                       controller: _searchController,
                       onChanged: _onSearchChanged,
                       decoration: InputDecoration(
-                        hintText: '',
+                        hintText: 'Search here',
                         prefixIcon: Icon(
                           Icons.search,
                           color: colorScheme.onSurfaceVariant,
-                          size: 20,
+                          size: screenHeight * 0.025,  // 2.5% of screen height
                         ),
                         filled: true,
                         fillColor: Colors.transparent,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                          vertical: screenHeight * 0.015,
                         ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                // Filter tabs (right side)
+                SizedBox(width: screenWidth * 0.03),
+                // Filter tabs with gap on right
                 Row(
                   children: [
-                    _buildFilterTab('all', 'All'),
-                    const SizedBox(width: 10),
-                    _buildFilterTab('groups', 'Groups'),
-                    const SizedBox(width: 10),
-                    _buildFilterTab('individual', 'Direct'),
+                    _buildFilterTab('all', 'All', screenHeight, screenWidth),
+                    SizedBox(width: screenWidth * 0.025),
+                    _buildFilterTab('groups', 'Groups', screenHeight, screenWidth),
+                    SizedBox(width: screenWidth * 0.025),
+                    _buildFilterTab('individual', 'Direct', screenHeight, screenWidth),
                   ],
                 ),
               ],
             ),
           ),
-
-          const SizedBox(height: 16),
-
           // Content
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _messagesService.getAllConversations(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: Center(
+                  return Padding(
+                    padding: EdgeInsets.all(screenHeight * 0.04),
+                    child: const Center(
                       child: RoomieLoadingWidget(
                         size: 80,
                         text: 'Loading conversations...',
@@ -189,10 +203,10 @@ class _MessagesPageState extends State<MessagesPage> {
                       children: [
                         Icon(
                           Icons.error_outline,
-                          size: 64,
+                          size: screenHeight * 0.08,
                           color: colorScheme.onSurfaceVariant,
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: screenHeight * 0.02),
                         Text(
                           'Error loading conversations',
                           style: textTheme.bodyLarge?.copyWith(
@@ -200,7 +214,7 @@ class _MessagesPageState extends State<MessagesPage> {
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: screenHeight * 0.01),
                         Text(
                           '${snapshot.error}',
                           style: textTheme.bodySmall?.copyWith(
@@ -214,11 +228,17 @@ class _MessagesPageState extends State<MessagesPage> {
                 }
 
                 final conversations = snapshot.data ?? [];
-                print('📱 Messages page received ${conversations.length} conversations');
-                print('📊 Conversation types: ${conversations.map((c) => c['type']).toList()}');
-                
+                print(
+                  '📱 Messages page received ${conversations.length} conversations',
+                );
+                print(
+                  '📊 Conversation types: ${conversations.map((c) => c['type']).toList()}',
+                );
+
                 final filteredConversations = _applyFilters(conversations);
-                print('🔍 Filtered to ${filteredConversations.length} conversations (filter: $_selectedFilter)');
+                print(
+                  '🔍 Filtered to ${filteredConversations.length} conversations (filter: $_selectedFilter)',
+                );
 
                 if (filteredConversations.isEmpty) {
                   return Center(
@@ -227,10 +247,10 @@ class _MessagesPageState extends State<MessagesPage> {
                       children: [
                         Icon(
                           Icons.chat_bubble_outline,
-                          size: 64,
+                          size: screenHeight * 0.08,
                           color: colorScheme.onSurfaceVariant,
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: screenHeight * 0.02),
                         Text(
                           'No conversations yet',
                           style: textTheme.bodyLarge?.copyWith(
@@ -238,7 +258,7 @@ class _MessagesPageState extends State<MessagesPage> {
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: screenHeight * 0.01),
                         Text(
                           'Start a conversation by joining a group!',
                           style: textTheme.bodyMedium?.copyWith(
@@ -254,7 +274,7 @@ class _MessagesPageState extends State<MessagesPage> {
                   itemCount: filteredConversations.length,
                   itemBuilder: (context, index) {
                     final conversation = filteredConversations[index];
-                    return _buildConversationTile(conversation);
+                    return _buildConversationTile(conversation, screenHeight, screenWidth);
                   },
                 );
               },
@@ -265,11 +285,12 @@ class _MessagesPageState extends State<MessagesPage> {
     );
   }
 
-  Widget _buildFilterTab(String value, String label) {
+  Widget _buildFilterTab(String value, String label, double screenHeight, double screenWidth) {
     final isSelected = _selectedFilter == value;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -277,19 +298,24 @@ class _MessagesPageState extends State<MessagesPage> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: screenWidth * 0.03,  // 3% of screen width
+          vertical: screenHeight * 0.0125,  // 1.25% of screen height
+        ),
         decoration: BoxDecoration(
-      color: isSelected
-        ? colorScheme.primary
-        : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
+          color:
+              isSelected
+                  ? colorScheme.primary
+                  : colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(screenHeight * 0.025),
         ),
         child: Text(
           label,
           style: textTheme.labelLarge?.copyWith(
-            color: isSelected
-                ? colorScheme.onPrimary
-                : colorScheme.onSurfaceVariant,
+            color:
+                isSelected
+                    ? colorScheme.onPrimary
+                    : colorScheme.onSurfaceVariant,
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -298,7 +324,7 @@ class _MessagesPageState extends State<MessagesPage> {
     );
   }
 
-  Widget _buildConversationTile(Map<String, dynamic> conversation) {
+  Widget _buildConversationTile(Map<String, dynamic> conversation, double screenHeight, double screenWidth) {
     final isGroup = conversation['type'] == 'group';
     final lastMessageTime = conversation['lastMessageTime'] as DateTime?;
     final timeText =
@@ -308,10 +334,18 @@ class _MessagesPageState extends State<MessagesPage> {
 
     return Container(
       color: Theme.of(context).colorScheme.surface,
+      // Very small gap - only horizontal
+      margin: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.015,  // 1.5% left/right
+        vertical: screenHeight * 0.00,   // 0.1% top/bottom (very small)
+      ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: screenWidth * 0.03,  // Reduced horizontal padding since margin is added
+          vertical: screenHeight * 0.006,
+        ),
         leading: CircleAvatar(
-          radius: 24,
+          radius: screenHeight * 0.028,  // Slightly smaller - 2.8% instead of 3%
           backgroundColor:
               isGroup
                   ? Theme.of(context).colorScheme.primary
@@ -326,65 +360,71 @@ class _MessagesPageState extends State<MessagesPage> {
                       conversation['imageUrl'].isEmpty
                   ? Icon(
                     isGroup ? Icons.group : Icons.person,
-                    color: isGroup
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : Theme.of(context).colorScheme.onSecondaryContainer,
-                    size: 20,
+                    color:
+                        isGroup
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(
+                              context,
+                            ).colorScheme.onSecondaryContainer,
+                    size: screenHeight * 0.022,  // Smaller icon - 2.2% instead of 2.5%
                   )
                   : null,
         ),
         title: Row(
           children: [
             Expanded(
-              child: Text(
-                conversation['name'] ?? 'Unknown',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                overflow: TextOverflow.ellipsis,
+              child: Row(
+                children: [
+                  // Name
+                  Flexible(
+                    child: Text(
+                      conversation['name'] ?? 'Unknown',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15.5,  // Slightly smaller
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  // Member count for groups (next to name)
+                  if (isGroup && conversation['memberCount'] != null) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '(${conversation['memberCount']})',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (timeText.isNotEmpty)
+            // Time on the right
+            if (timeText.isNotEmpty) ...[
+              const SizedBox(width: 8),
               Text(
                 timeText,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontSize: 12,
-                ),
-              ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(
-              conversation['lastMessage'] ?? 'No messages yet',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 14,
-              ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-            if (isGroup && conversation['memberCount'] != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                '${conversation['memberCount']} members',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontSize: 12,
+                  fontSize: 11.5,  // Slightly smaller
                 ),
               ),
             ],
           ],
         ),
-        trailing: Icon(
-          Icons.chevron_right,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-          size: 20,
+        subtitle: Padding(
+          padding: EdgeInsets.only(top: screenHeight * 0.003),  // Reduced spacing
+          child: Text(
+            conversation['lastMessage'] ?? 'No messages yet',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 13.5,  // Slightly smaller
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
         ),
         onTap: () => _openConversation(conversation),
       ),
@@ -399,18 +439,16 @@ class _MessagesPageState extends State<MessagesPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          chatData: {
-            ...chatData,
-            if (!isGroup)
-              'otherUserId': conversation['otherUserId'],
-            if (!isGroup)
-              'otherUserName': conversation['name'],
-            if (!isGroup)
-              'otherUserImageUrl': conversation['imageUrl'],
-          },
-          chatType: isGroup ? 'group' : 'individual',
-        ),
+        builder:
+            (context) => ChatScreen(
+              chatData: {
+                ...chatData,
+                if (!isGroup) 'otherUserId': conversation['otherUserId'],
+                if (!isGroup) 'otherUserName': conversation['name'],
+                if (!isGroup) 'otherUserImageUrl': conversation['imageUrl'],
+              },
+              chatType: isGroup ? 'group' : 'individual',
+            ),
       ),
     );
   }

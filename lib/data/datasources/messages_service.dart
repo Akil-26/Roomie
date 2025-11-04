@@ -15,9 +15,10 @@ class MessagesService {
     }
 
     // Return a stream that updates in real-time
-    return Stream.periodic(const Duration(seconds: 2), (_) => user.uid)
-        .asyncMap((userId) => _getConversations(userId))
-        .distinct();
+    return Stream.periodic(
+      const Duration(seconds: 2),
+      (_) => user.uid,
+    ).asyncMap((userId) => _getConversations(userId)).distinct();
   }
 
   // 🔄 Get conversations by combining group and individual chats
@@ -26,7 +27,7 @@ class MessagesService {
 
     try {
       print('🔄 Loading conversations for user: $userId');
-      
+
       // 1. Get Group Conversations (both from membership and from chat participation)
       final groupConversations = await _getGroupConversations(userId);
       print('👥 Got ${groupConversations.length} group conversations');
@@ -39,17 +40,21 @@ class MessagesService {
 
       // 3. Get Individual Conversations (Direct Messages)
       final individualConversations = await _getIndividualConversations(userId);
-      print('👤 Got ${individualConversations.length} individual conversations');
+      print(
+        '👤 Got ${individualConversations.length} individual conversations',
+      );
       conversations.addAll(individualConversations);
 
       // 4. Remove duplicates based on conversation ID
       final uniqueConversations = <String, Map<String, dynamic>>{};
       for (final conv in conversations) {
         final id = conv['id'] as String;
-        if (!uniqueConversations.containsKey(id) || 
-            (conv['lastMessageTime'] != null && 
-             uniqueConversations[id]?['lastMessageTime'] != null &&
-             (conv['lastMessageTime'] as DateTime).isAfter(uniqueConversations[id]!['lastMessageTime'] as DateTime))) {
+        if (!uniqueConversations.containsKey(id) ||
+            (conv['lastMessageTime'] != null &&
+                uniqueConversations[id]?['lastMessageTime'] != null &&
+                (conv['lastMessageTime'] as DateTime).isAfter(
+                  uniqueConversations[id]!['lastMessageTime'] as DateTime,
+                ))) {
           uniqueConversations[id] = conv;
         }
       }
@@ -61,11 +66,11 @@ class MessagesService {
       finalConversations.sort((a, b) {
         final aTime = a['lastMessageTime'] as DateTime?;
         final bTime = b['lastMessageTime'] as DateTime?;
-        
+
         if (aTime == null && bTime == null) return 0;
         if (aTime == null) return 1;
         if (bTime == null) return -1;
-        
+
         return bTime.compareTo(aTime);
       });
 
@@ -78,16 +83,19 @@ class MessagesService {
   }
 
   // 🏠 Get Group Conversations
-  Future<List<Map<String, dynamic>>> _getGroupConversations(String userId) async {
+  Future<List<Map<String, dynamic>>> _getGroupConversations(
+    String userId,
+  ) async {
     try {
       print('🔍 Getting group conversations for user: $userId');
-      
+
       // Get user's current group
-      final userGroupQuery = await _firestore
-          .collection('groups')
-          .where('members', arrayContains: userId)
-          .where('isActive', isEqualTo: true)
-          .get();
+      final userGroupQuery =
+          await _firestore
+              .collection('groups')
+              .where('members', arrayContains: userId)
+              .where('isActive', isEqualTo: true)
+              .get();
 
       print('📊 Found ${userGroupQuery.docs.length} groups for user');
 
@@ -101,12 +109,13 @@ class MessagesService {
       for (final groupDoc in userGroupQuery.docs) {
         final groupData = groupDoc.data();
         final groupId = groupDoc.id;
-        
+
         print('👥 Processing group: ${groupData['name']} (ID: $groupId)');
 
         // Get the latest message from this group (optional - group shows even without messages)
         final messagesRef = _realtimeDB.ref('groupChats/$groupId/messages');
-        final snapshot = await messagesRef.orderByChild('timestamp').limitToLast(1).get();
+        final snapshot =
+            await messagesRef.orderByChild('timestamp').limitToLast(1).get();
 
         Map<String, dynamic>? lastMessage;
         DateTime? lastMessageTime;
@@ -117,14 +126,14 @@ class MessagesService {
           if (messages.isNotEmpty) {
             final lastMessageData = messages.values.last;
             lastMessage = Map<String, dynamic>.from(lastMessageData);
-            
+
             if (lastMessage['timestamp'] != null) {
               lastMessageTime = DateTime.fromMillisecondsSinceEpoch(
-                lastMessage['timestamp'] as int
+                lastMessage['timestamp'] as int,
               );
               lastMessageText = lastMessage['message'] ?? 'Message';
             }
-            
+
             print('💬 Last message: ${lastMessage['message']}');
           }
         } else {
@@ -146,7 +155,7 @@ class MessagesService {
           'lastMessageSender': lastMessage?['senderName'] ?? '',
           'lastMessageTime': lastMessageTime ?? DateTime.now(),
           'unreadCount': 0,
-          'groupData': groupData, 
+          'groupData': groupData,
         });
       }
 
@@ -159,10 +168,12 @@ class MessagesService {
   }
 
   // � Get Group Chats where user has participated (regardless of membership)
-  Future<List<Map<String, dynamic>>> _getParticipatedGroupChats(String userId) async {
+  Future<List<Map<String, dynamic>>> _getParticipatedGroupChats(
+    String userId,
+  ) async {
     try {
       print('🔍 Getting participated group chats for user: $userId');
-      
+
       // Check all group chats in Realtime Database
       final groupChatsRef = _realtimeDB.ref('groupChats');
       final snapshot = await groupChatsRef.get();
@@ -187,7 +198,7 @@ class MessagesService {
 
         if (messages != null && messages is Map) {
           final messageMap = Map<String, dynamic>.from(messages);
-          
+
           // Check if user has sent any messages
           for (final msgEntry in messageMap.entries) {
             final message = Map<String, dynamic>.from(msgEntry.value as Map);
@@ -199,20 +210,24 @@ class MessagesService {
 
           // Get the most recent message
           if (messageMap.isNotEmpty) {
-            final sortedMessages = messageMap.entries.toList()
-              ..sort((a, b) {
-                final aMap = Map<String, dynamic>.from(a.value as Map);
-                final bMap = Map<String, dynamic>.from(b.value as Map);
-                final aTime = aMap['timestamp'] as int? ?? 0;
-                final bTime = bMap['timestamp'] as int? ?? 0;
-                return bTime.compareTo(aTime);
-              });
+            final sortedMessages =
+                messageMap.entries.toList()..sort((a, b) {
+                  final aMap = Map<String, dynamic>.from(a.value as Map);
+                  final bMap = Map<String, dynamic>.from(b.value as Map);
+                  final aTime = aMap['timestamp'] as int? ?? 0;
+                  final bTime = bMap['timestamp'] as int? ?? 0;
+                  return bTime.compareTo(aTime);
+                });
 
             if (sortedMessages.isNotEmpty) {
-              lastMessage = Map<String, dynamic>.from(sortedMessages.first.value as Map);
+              lastMessage = Map<String, dynamic>.from(
+                sortedMessages.first.value as Map,
+              );
               final timestamp = lastMessage['timestamp'] as int?;
               if (timestamp != null) {
-                lastMessageTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+                lastMessageTime = DateTime.fromMillisecondsSinceEpoch(
+                  timestamp,
+                );
               }
             }
           }
@@ -220,10 +235,11 @@ class MessagesService {
 
         if (hasParticipated) {
           print('📱 Found participated group chat: $groupId');
-          
+
           // Get group details from Firestore
           try {
-            final groupDoc = await _firestore.collection('groups').doc(groupId).get();
+            final groupDoc =
+                await _firestore.collection('groups').doc(groupId).get();
             final groupData = groupDoc.data() ?? {};
 
             participatedChats.add({
@@ -233,7 +249,8 @@ class MessagesService {
               'imageUrl': groupData['imageUrl'],
               'members': groupData['members'] ?? [],
               'memberCount': groupData['memberCount'] ?? 1,
-              'lastMessage': lastMessage?['message'] ?? 'Start a conversation...',
+              'lastMessage':
+                  lastMessage?['message'] ?? 'Start a conversation...',
               'lastMessageSender': lastMessage?['senderName'] ?? '',
               'lastMessageTime': lastMessageTime ?? DateTime.now(),
               'unreadCount': 0,
@@ -249,7 +266,8 @@ class MessagesService {
               'imageUrl': null,
               'members': [],
               'memberCount': 1,
-              'lastMessage': lastMessage?['message'] ?? 'Start a conversation...',
+              'lastMessage':
+                  lastMessage?['message'] ?? 'Start a conversation...',
               'lastMessageSender': lastMessage?['senderName'] ?? '',
               'lastMessageTime': lastMessageTime ?? DateTime.now(),
               'unreadCount': 0,
@@ -268,7 +286,9 @@ class MessagesService {
   }
 
   // �👥 Get Individual Conversations (Person-to-Person)
-  Future<List<Map<String, dynamic>>> _getIndividualConversations(String userId) async {
+  Future<List<Map<String, dynamic>>> _getIndividualConversations(
+    String userId,
+  ) async {
     try {
       // Get all individual chat rooms where this user is a participant
       final chatsRef = _realtimeDB.ref('chats');
@@ -298,19 +318,24 @@ class MessagesService {
         if (otherParticipantId.isEmpty) continue;
 
         // Get other participant's details from Firestore
-        final userDoc = await _firestore.collection('users').doc(otherParticipantId).get();
-        
+        final userDoc =
+            await _firestore.collection('users').doc(otherParticipantId).get();
+
         // Skip if user doesn't exist or has no data
         if (!userDoc.exists || userDoc.data() == null) {
-          print('⏭️ Skipping chat $chatId - user $otherParticipantId not found');
+          print(
+            '⏭️ Skipping chat $chatId - user $otherParticipantId not found',
+          );
           continue;
         }
-        
+
         final userData = userDoc.data()!;
-        
+
         // Skip if user has no name AND no email (invalid/test user)
-        if ((userData['name'] == null || userData['name'].toString().trim().isEmpty) && 
-            (userData['email'] == null || userData['email'].toString().trim().isEmpty)) {
+        if ((userData['name'] == null ||
+                userData['name'].toString().trim().isEmpty) &&
+            (userData['email'] == null ||
+                userData['email'].toString().trim().isEmpty)) {
           print('⏭️ Skipping chat $chatId - invalid user data (no name/email)');
           continue;
         }
@@ -325,20 +350,24 @@ class MessagesService {
             final messageMap = Map<String, dynamic>.from(messages);
             if (messageMap.isNotEmpty) {
               // Get the most recent message by sorting
-              final sortedMessages = messageMap.entries.toList()
-                ..sort((a, b) {
-                  final aMap = Map<String, dynamic>.from(a.value as Map);
-                  final bMap = Map<String, dynamic>.from(b.value as Map);
-                  final aTime = aMap['timestamp'] as int? ?? 0;
-                  final bTime = bMap['timestamp'] as int? ?? 0;
-                  return bTime.compareTo(aTime);
-                });
+              final sortedMessages =
+                  messageMap.entries.toList()..sort((a, b) {
+                    final aMap = Map<String, dynamic>.from(a.value as Map);
+                    final bMap = Map<String, dynamic>.from(b.value as Map);
+                    final aTime = aMap['timestamp'] as int? ?? 0;
+                    final bTime = bMap['timestamp'] as int? ?? 0;
+                    return bTime.compareTo(aTime);
+                  });
 
               if (sortedMessages.isNotEmpty) {
-                lastMessage = Map<String, dynamic>.from(sortedMessages.first.value as Map);
+                lastMessage = Map<String, dynamic>.from(
+                  sortedMessages.first.value as Map,
+                );
                 final timestamp = lastMessage['timestamp'] as int?;
                 if (timestamp != null) {
-                  lastMessageTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+                  lastMessageTime = DateTime.fromMillisecondsSinceEpoch(
+                    timestamp,
+                  );
                 }
               }
             }
@@ -349,14 +378,14 @@ class MessagesService {
 
         conversations.add({
           'id': chatId,
-          'name': userData['name'] ?? userData['username'] ?? 'User',
+          'name': userData['username'] ?? userData['name'] ?? 'User',
           'type': 'individual',
           'imageUrl': userData['profileImageUrl'],
           'otherUserId': otherParticipantId,
           'lastMessage': lastMessage?['message'] ?? 'No messages yet',
           'lastMessageSender': lastMessage?['senderName'] ?? '',
           'lastMessageTime': lastMessageTime,
-          'unreadCount': 0, 
+          'unreadCount': 0,
           'userData': userData, // Full user data for navigation
         });
       }
@@ -375,34 +404,34 @@ class MessagesService {
       print('❌ No authenticated user for refreshConversations');
       return [];
     }
-    
+
     print('🔄 Refreshing conversations for user: ${user.uid}');
-    
+
     try {
       // Simple approach: Get all groups and check which ones have messages
       final conversations = <Map<String, dynamic>>[];
-      
+
       // Check all groups in Firestore
       final allGroups = await _firestore.collection('groups').get();
       print('📊 Total groups in database: ${allGroups.docs.length}');
-      
+
       for (final groupDoc in allGroups.docs) {
         final groupData = groupDoc.data();
         final groupId = groupDoc.id;
         final members = List<String>.from(groupData['members'] ?? []);
-        
+
         print('👥 Checking group ${groupData['name']} (ID: $groupId)');
         print('   Members: $members');
         print('   User in group: ${members.contains(user.uid)}');
-        
+
         // Check if user is a member OR has messages in this group
         bool shouldInclude = members.contains(user.uid);
-        
+
         if (!shouldInclude) {
           // Check if user has sent messages in this group
           final messagesRef = _realtimeDB.ref('groupChats/$groupId/messages');
           final snapshot = await messagesRef.get();
-          
+
           if (snapshot.exists && snapshot.value != null) {
             final messages = Map<String, dynamic>.from(snapshot.value as Map);
             for (final msgEntry in messages.entries) {
@@ -415,26 +444,27 @@ class MessagesService {
             }
           }
         }
-        
+
         if (shouldInclude) {
           // Get the latest message
           final messagesRef = _realtimeDB.ref('groupChats/$groupId/messages');
-          final snapshot = await messagesRef.orderByChild('timestamp').limitToLast(1).get();
-          
+          final snapshot =
+              await messagesRef.orderByChild('timestamp').limitToLast(1).get();
+
           String lastMessage = 'Start chatting...';
           DateTime lastMessageTime = DateTime.now();
-          
+
           if (snapshot.exists && snapshot.value != null) {
             final messages = Map<String, dynamic>.from(snapshot.value as Map);
             if (messages.isNotEmpty) {
               final lastMsg = messages.values.last;
               lastMessage = lastMsg['message'] ?? 'Message';
               lastMessageTime = DateTime.fromMillisecondsSinceEpoch(
-                lastMsg['timestamp'] as int
+                lastMsg['timestamp'] as int,
               );
             }
           }
-          
+
           conversations.add({
             'id': groupId,
             'name': groupData['name'] ?? 'Group Chat',
@@ -447,18 +477,18 @@ class MessagesService {
             'unreadCount': 0,
             'groupData': groupData,
           });
-          
+
           print('✅ Added conversation: ${groupData['name']}');
         }
       }
-      
+
       // Sort by last message time
       conversations.sort((a, b) {
         final aTime = a['lastMessageTime'] as DateTime;
         final bTime = b['lastMessageTime'] as DateTime;
         return bTime.compareTo(aTime);
       });
-      
+
       print('🎉 Returning ${conversations.length} conversations');
       return conversations;
     } catch (e, stackTrace) {
@@ -489,11 +519,16 @@ class MessagesService {
   Future<Map<String, int>> getConversationStats(String userId) async {
     try {
       final conversations = await _getConversations(userId);
-      
+
       int totalConversations = conversations.length;
-      int groupConversations = conversations.where((c) => c['type'] == 'group').length;
-      int individualConversations = conversations.where((c) => c['type'] == 'individual').length;
-      int unreadMessages = conversations.fold(0, (total, c) => total + (c['unreadCount'] as int? ?? 0));
+      int groupConversations =
+          conversations.where((c) => c['type'] == 'group').length;
+      int individualConversations =
+          conversations.where((c) => c['type'] == 'individual').length;
+      int unreadMessages = conversations.fold(
+        0,
+        (total, c) => total + (c['unreadCount'] as int? ?? 0),
+      );
 
       return {
         'total': totalConversations,
@@ -503,12 +538,7 @@ class MessagesService {
       };
     } catch (e) {
       print('Error getting conversation stats: $e');
-      return {
-        'total': 0,
-        'groups': 0,
-        'individual': 0,
-        'unread': 0,
-      };
+      return {'total': 0, 'groups': 0, 'individual': 0, 'unread': 0};
     }
   }
 }

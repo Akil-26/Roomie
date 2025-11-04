@@ -98,10 +98,8 @@ class _ChatListWidgetState extends State<ChatListWidget> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          chatData: chatData,
-          chatType: chatType,
-        ),
+        builder:
+            (context) => ChatScreen(chatData: chatData, chatType: chatType),
       ),
     ).then((_) {
       // Refresh chats when returning from chat screen
@@ -136,27 +134,28 @@ class _ChatListWidgetState extends State<ChatListWidget> {
             onChanged: _filterChats,
           ),
         ),
-        
+
         // Chat list
         Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _filteredChats.isEmpty
+          child:
+              _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredChats.isEmpty
                   ? _buildEmptyState()
                   : RefreshIndicator(
-                      onRefresh: _loadChats,
-                      child: ListView.builder(
-                        itemCount: _filteredChats.length,
-                        itemBuilder: (context, index) {
-                          final chat = _filteredChats[index];
-                          return _ChatListItem(
-                            chat: chat,
-                            currentUserId: widget.currentUserId,
-                            onTap: () => _openChat(chat),
-                          );
-                        },
-                      ),
+                    onRefresh: _loadChats,
+                    child: ListView.builder(
+                      itemCount: _filteredChats.length,
+                      itemBuilder: (context, index) {
+                        final chat = _filteredChats[index];
+                        return _ChatListItem(
+                          chat: chat,
+                          currentUserId: widget.currentUserId,
+                          onTap: () => _openChat(chat),
+                        );
+                      },
                     ),
+                  ),
         ),
       ],
     );
@@ -232,7 +231,10 @@ class _ChatListItem extends StatelessWidget {
           currentUserId,
         ),
         style: TextStyle(
-          color: hasUnread ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurfaceVariant,
+          color:
+              hasUnread
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
           fontWeight: hasUnread ? FontWeight.w500 : FontWeight.normal,
         ),
         maxLines: 1,
@@ -246,7 +248,10 @@ class _ChatListItem extends StatelessWidget {
             chat.getTimeAgo(),
             style: TextStyle(
               fontSize: 12,
-              color: hasUnread ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurfaceVariant,
+              color:
+                  hasUnread
+                      ? Theme.of(context).colorScheme.onSurface
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: hasUnread ? FontWeight.w500 : FontWeight.normal,
             ),
           ),
@@ -258,10 +263,7 @@ class _ChatListItem extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primary,
                 borderRadius: BorderRadius.circular(10),
               ),
-              constraints: const BoxConstraints(
-                minWidth: 20,
-                minHeight: 20,
-              ),
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
               child: Text(
                 unreadCount > 99 ? '99+' : unreadCount.toString(),
                 style: TextStyle(
@@ -282,22 +284,20 @@ class _ChatListItem extends StatelessWidget {
     if (chat is GroupChat) {
       // Group chat avatar
       return CircleAvatar(
-        backgroundImage: chat.getChatImageUrl() != null
-            ? NetworkImage(chat.getChatImageUrl()!)
-            : null,
-        child: chat.getChatImageUrl() == null
-            ? const Icon(Icons.group)
-            : null,
+        backgroundImage:
+            chat.getChatImageUrl() != null
+                ? NetworkImage(chat.getChatImageUrl()!)
+                : null,
+        child: chat.getChatImageUrl() == null ? const Icon(Icons.group) : null,
       );
     } else {
       // Individual chat avatar
       return CircleAvatar(
-        backgroundImage: chat.getChatImageUrl() != null
-            ? NetworkImage(chat.getChatImageUrl()!)
-            : null,
-        child: chat.getChatImageUrl() == null
-            ? const Icon(Icons.person)
-            : null,
+        backgroundImage:
+            chat.getChatImageUrl() != null
+                ? NetworkImage(chat.getChatImageUrl()!)
+                : null,
+        child: chat.getChatImageUrl() == null ? const Icon(Icons.person) : null,
       );
     }
   }

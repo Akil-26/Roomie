@@ -17,7 +17,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
-  
+
   ExpenseType _selectedType = ExpenseType.other;
   final ExpenseService _expenseService = ExpenseService();
   final AuthService _authService = AuthService();
@@ -42,7 +42,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(labelText: 'Title'),
-                validator: (value) => value?.isEmpty == true ? 'Enter title' : null,
+                validator:
+                    (value) => value?.isEmpty == true ? 'Enter title' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -64,12 +65,17 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               DropdownButtonFormField<ExpenseType>(
                 initialValue: _selectedType,
                 decoration: const InputDecoration(labelText: 'Type'),
-                items: ExpenseType.values.map((type) => 
-                  DropdownMenuItem(
-                    value: type,
-                    child: Text(type.toString().split('.').last.toUpperCase()),
-                  ),
-                ).toList(),
+                items:
+                    ExpenseType.values
+                        .map(
+                          (type) => DropdownMenuItem(
+                            value: type,
+                            child: Text(
+                              type.toString().split('.').last.toUpperCase(),
+                            ),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (value) => setState(() => _selectedType = value!),
               ),
               const Spacer(),
@@ -77,9 +83,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _addExpense,
-                  child: _isLoading 
-                      ? const CircularProgressIndicator()
-                      : const Text('Add Expense'),
+                  child:
+                      _isLoading
+                          ? const CircularProgressIndicator()
+                          : const Text('Add Expense'),
                 ),
               ),
             ],
@@ -91,13 +98,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   Future<void> _addExpense() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       final user = _authService.currentUser;
       if (user == null) throw 'User not logged in';
-      
+
       await _expenseService.createExpense(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
@@ -106,7 +113,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         groupId: widget.groupId,
         participantIds: [], // Empty for now, service will handle group members
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Expense added successfully')),
@@ -115,9 +122,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
