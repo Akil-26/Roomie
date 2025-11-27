@@ -318,15 +318,14 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
                           _toggleAttachmentMenu();
                         },
                       ),
-                      if (widget.isGroup)
-                        _AttachmentButton(
-                          icon: Icons.task_alt_outlined,
-                          label: 'To-Do',
-                          onTap: () {
-                            widget.onTodoPressed?.call();
-                            _toggleAttachmentMenu();
-                          },
-                        ),
+                      _AttachmentButton(
+                        icon: Icons.task_alt_outlined,
+                        label: 'To-Do',
+                        onTap: () {
+                          widget.onTodoPressed?.call();
+                          _toggleAttachmentMenu();
+                        },
+                      ),
                     ],
                   ),
                 ),

@@ -120,12 +120,14 @@ class _MessagesPageState extends State<MessagesPage> {
           // Search bar and Filter tabs on same row
           Container(
             color: Colors.transparent,
-            padding: EdgeInsets.only(
-              left: screenWidth * 0.03,
-              right: screenWidth * 0.03,
-              bottom: screenHeight * 0.0005,  // 0.5% very small bottom padding
+            padding: EdgeInsets.fromLTRB(
+              screenWidth * 0.028,
+              screenHeight * 0.015,
+              screenWidth * 0.028,
+              screenHeight * 0.01,
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Search bar (left side)
                 Expanded(
@@ -143,29 +145,35 @@ class _MessagesPageState extends State<MessagesPage> {
                     child: TextField(
                       controller: _searchController,
                       onChanged: _onSearchChanged,
+                      textAlignVertical: TextAlignVertical.center,
+                      style: textTheme.bodyMedium,
                       decoration: InputDecoration(
                         hintText: 'Search here',
                         prefixIcon: Icon(
                           Icons.search,
                           color: colorScheme.onSurfaceVariant,
-                          size: screenHeight * 0.025,  // 2.5% of screen height
+                          size: screenHeight * 0.025,
                         ),
                         filled: true,
                         fillColor: Colors.transparent,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: screenWidth * 0.04,
-                          vertical: screenHeight * 0.015,
+                        contentPadding: EdgeInsets.only(
+                          left: screenWidth * 0.04,
+                          right: screenWidth * 0.04,
+                          top: screenHeight * 0.0165,
+                          bottom: screenHeight * 0.0165,
                         ),
+                        isDense: true,
                       ),
                     ),
                   ),
                 ),
-                SizedBox(width: screenWidth * 0.03),
+                SizedBox(width: screenWidth * 0.04),
                 // Filter tabs with gap on right
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _buildFilterTab('all', 'All', screenHeight, screenWidth),
                     SizedBox(width: screenWidth * 0.025),
@@ -299,25 +307,27 @@ class _MessagesPageState extends State<MessagesPage> {
       },
       child: Container(
         padding: EdgeInsets.symmetric(
-          horizontal: screenWidth * 0.03,  // 3% of screen width
-          vertical: screenHeight * 0.0125,  // 1.25% of screen height
+          horizontal: screenWidth * 0.04,
+          vertical: screenHeight * 0.014,
         ),
         decoration: BoxDecoration(
           color:
               isSelected
                   ? colorScheme.primary
                   : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(screenHeight * 0.025),
+          borderRadius: BorderRadius.circular(screenHeight * 0.0275),
         ),
-        child: Text(
-          label,
-          style: textTheme.labelLarge?.copyWith(
-            color:
-                isSelected
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurfaceVariant,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
+        child: Center(
+          child: Text(
+            label,
+            style: textTheme.labelLarge?.copyWith(
+              color:
+                  isSelected
+                      ? colorScheme.onPrimary
+                      : colorScheme.onSurfaceVariant,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ),

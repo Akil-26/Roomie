@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:roomie/data/models/notification_model.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 
@@ -34,8 +35,24 @@ class NotificationService {
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         print('✅ User granted permission');
 
-        // Get FCM token
-        String? token = await _fcm.getToken();
+        // Get FCM token (with web-specific handling)
+        String? token;
+        if (kIsWeb) {
+          // On web, service worker registration might fail
+          // but we can still get a token
+          try {
+            token = await _fcm.getToken(
+              vapidKey: 'YOUR_VAPID_KEY', // Optional: Add your VAPID key here
+            );
+          } catch (webError) {
+            print('⚠️ Web FCM token error (expected in development): $webError');
+            // Continue without FCM token on web - other features still work
+          }
+        } else {
+          // Mobile platforms
+          token = await _fcm.getToken();
+        }
+
         if (token != null) {
           await _saveFCMToken(token);
         }
@@ -51,7 +68,11 @@ class NotificationService {
       }
     } catch (e) {
       print('❌ Error initializing notifications: $e');
+      // Don't rethrow - allow app to continue without notifications
     }
+    
+    // Always print this to indicate initialization completed
+    print('✅ Notifications initialized');
   }
 
   // Save FCM token to Firestore

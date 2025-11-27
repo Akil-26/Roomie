@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:roomie/presentation/screens/auth/login_s.dart';
 import 'package:roomie/presentation/screens/home/home_s.dart';
 import 'package:roomie/presentation/screens/profile/user_profile_s.dart';
+import 'package:roomie/presentation/screens/onboarding/permissions_onboarding_s.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/presentation/widgets/auth_wrapper.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
@@ -94,6 +95,7 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/login': (context) => const PhoneLoginScreen(),
         '/profile': (context) => const UserProfileScreen(),
+        '/permissions-onboarding': (context) => const PermissionsOnboardingScreen(),
       },
       theme: AppThemes.lightTheme,
       darkTheme: AppThemes.darkTheme,

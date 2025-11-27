@@ -200,57 +200,61 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             color: colorScheme.onSurface,
             fontWeight: FontWeight.bold,
             letterSpacing: -0.015,
+            fontSize: screenHeight * 0.03, // Responsive font size
           ),
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: Icon(Icons.edit, color: colorScheme.primary),
-            onPressed: () async {
-              if (_currentUser != null) {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (context) =>
-                            EditProfileScreen(currentUser: _currentUser!),
-                  ),
-                );
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: IconButton(
+              icon: Icon(Icons.edit, color: colorScheme.primary),
+              onPressed: () async {
+                if (_currentUser != null) {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder:
+                          (context) =>
+                              EditProfileScreen(currentUser: _currentUser!),
+                    ),
+                  );
 
-                // Reload user data if profile was updated
-                if (result is Map) {
-                  // Optimistic update if we received new URL back
-                  final newUrl = result['profileImageUrl'] as String?;
-                  if (newUrl != null && newUrl.isNotEmpty) {
-                    print('Optimistically updating profile image to $newUrl');
-                    _profileImageNotifier.updateProfileImage(newUrl);
-                    setState(() {
-                      _currentUser = _currentUser!.copyWith(
-                        profileImageUrl: newUrl,
-                      );
-                    });
+                  // Reload user data if profile was updated
+                  if (result is Map) {
+                    // Optimistic update if we received new URL back
+                    final newUrl = result['profileImageUrl'] as String?;
+                    if (newUrl != null && newUrl.isNotEmpty) {
+                      print('Optimistically updating profile image to $newUrl');
+                      _profileImageNotifier.updateProfileImage(newUrl);
+                      setState(() {
+                        _currentUser = _currentUser!.copyWith(
+                          profileImageUrl: newUrl,
+                        );
+                      });
+                    }
+                    _loadUserData(); // still refetch to ensure consistency
+                  } else if (result == true) {
+                    // Backward compatibility if we just returned true
+                    _loadUserData();
                   }
-                  _loadUserData(); // still refetch to ensure consistency
-                } else if (result == true) {
-                  // Backward compatibility if we just returned true
-                  _loadUserData();
                 }
-              }
-            },
+              },
+            ),
           ),
         ],
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SizedBox(height: 20),
+            const SizedBox(height: 3),
             // Header Card (Profile picture + name + bio)
             Padding(
               padding: EdgeInsets.all(screenWidth * 0.02),  // 2% gap on all sides
               child: _buildHeaderCard(),
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 3),
 
             // Followers / Following stats
             Padding(
@@ -258,7 +262,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               child: _buildFollowStatsRow(),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 3),
 
             // Profile Information (compact card)
             Padding(
@@ -266,7 +270,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               child: _buildDetailsCard(),
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 3),
 
             // Action Buttons
             Padding(
@@ -590,20 +594,25 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         : colorScheme.primary;
 
     return Material(
-      color: colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(24),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(24),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: colorScheme.outlineVariant),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: iconBg,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 child: Icon(icon, color: iconColor, size: 22),
               ),

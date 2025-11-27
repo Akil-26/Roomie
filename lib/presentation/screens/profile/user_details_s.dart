@@ -51,7 +51,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
           if (mounted) {
             Navigator.pushNamedAndRemoveUntil(
               context,
-              '/home',
+              '/permissions-onboarding',
               (route) => false,
             );
           }

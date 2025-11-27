@@ -1,5 +1,4 @@
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:roomie/data/models/message_model.dart';
@@ -8,10 +7,7 @@ import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/cloudinary_service.dart';
 
 class ChatService {
-  final FirebaseDatabase _database = FirebaseDatabase.instanceFor(
-    app: Firebase.app(),
-    databaseURL: 'https://roomie-cfc03-default-rtdb.firebaseio.com/',
-  );
+  final FirebaseDatabase _database = FirebaseDatabase.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
   final CloudinaryService _cloudinary = CloudinaryService();

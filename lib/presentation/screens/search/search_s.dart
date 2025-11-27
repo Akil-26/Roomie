@@ -104,6 +104,7 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(
         backgroundColor: cs.surface,
         elevation: 1,
+        automaticallyImplyLeading: false,
         title: Text(
           'Search',
           style:
@@ -125,6 +126,7 @@ class _SearchScreenState extends State<SearchScreen> {
             color: Colors.transparent,
             padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.028, vertical: 0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Messages-like search bar
                 Expanded(
@@ -133,7 +135,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     height: screenHeight * 0.055,
                     decoration: BoxDecoration(
                       color: Colors.transparent,
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(screenHeight * 0.0275),
                       border: Border.all(color: cs.outlineVariant, width: 1),
                     ),
                     child: TextField(
@@ -143,22 +145,27 @@ class _SearchScreenState extends State<SearchScreen> {
                         await _controller.commitQueryToHistory();
                         await _loadHistory();
                       },
+                      textAlignVertical: TextAlignVertical.center,
+                      style: theme.textTheme.bodyMedium,
                       decoration: InputDecoration(
                         hintText: 'Search here',
                         prefixIcon: Icon(
                           Icons.search,
                           color: cs.onSurfaceVariant,
-                          size: screenWidth * 0.05,
+                          size: screenHeight * 0.025,
                         ),
                         filled: true,
                         fillColor: Colors.transparent,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 10,
+                        contentPadding: EdgeInsets.only(
+                          left: screenWidth * 0.04,
+                          right: screenWidth * 0.04,
+                          top: screenHeight * 0.0165,
+                          bottom: screenHeight * 0.0165,
                         ),
+                        isDense: true,
                       ),
                     ),
                   ),
@@ -172,18 +179,22 @@ class _SearchScreenState extends State<SearchScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: cs.primary,
                       foregroundColor: cs.onPrimary,
-                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.038),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: screenWidth * 0.045,
+                        vertical: 0,
+                      ),
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(22),
+                        borderRadius: BorderRadius.circular(screenHeight * 0.0275),
                       ),
                     ),
-                    icon: Icon(Icons.tune, size: screenWidth * 0.05),
+                    icon: Icon(Icons.tune, size: screenHeight * 0.025),
                     label: Text(
                       'Filters',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: cs.onPrimary,
                         fontWeight: FontWeight.w600,
+                        fontSize: 14,
                       ),
                     ),
                   ),
@@ -195,7 +206,12 @@ class _SearchScreenState extends State<SearchScreen> {
           // History row (with clear all)
           if (_history.isNotEmpty)
             Padding(
-              padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03, vertical: screenHeight * 0.005),
+              padding: EdgeInsets.fromLTRB(
+                screenWidth * 0.04,
+                screenHeight * 0.01,
+                screenWidth * 0.04,
+                screenHeight * 0.008,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -217,10 +233,12 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
 
           if (_history.isNotEmpty)
-            SizedBox(
-              height: screenHeight * 0.055,
-              child: ListView.separated(
-                padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03),
+            Padding(
+              padding: EdgeInsets.only(bottom: screenHeight * 0.01),
+              child: SizedBox(
+                height: screenHeight * 0.045,
+                child: ListView.separated(
+                  padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
                 scrollDirection: Axis.horizontal,
                 itemBuilder: (context, index) {
                   final item = _history[index];
@@ -236,8 +254,9 @@ class _SearchScreenState extends State<SearchScreen> {
                     },
                   );
                 },
-                separatorBuilder: (context, index) => SizedBox(width: screenWidth * 0.02),
-                itemCount: _history.length,
+                  separatorBuilder: (context, index) => SizedBox(width: screenWidth * 0.02),
+                  itemCount: _history.length,
+                ),
               ),
             ),
 
@@ -256,29 +275,35 @@ class _SearchScreenState extends State<SearchScreen> {
                 // Until user searches or applies a filter, show a friendly empty state
                 if (!hasQuery && !hasActiveFilters) {
                   return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.search,
-                          size: screenWidth * 0.1,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        SizedBox(height: screenHeight * 0.01),
-                        Text(
-                          'Find rooms',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: cs.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Search by room name, location, or rent',
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.08),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.search,
+                            size: screenWidth * 0.15,
                             color: cs.onSurfaceVariant,
                           ),
-                        ),
-                      ],
+                          SizedBox(height: screenHeight * 0.02),
+                          Text(
+                            'Find rooms',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: cs.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          SizedBox(height: screenHeight * 0.008),
+                          Text(
+                            'Search by room name, location, or rent',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
