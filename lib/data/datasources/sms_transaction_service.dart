@@ -4,6 +4,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:telephony/telephony.dart';
 import 'package:roomie/data/models/sms_transaction_model.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:roomie/data/datasources/local_sms_transaction_store.dart';
 
 class SmsTransactionService {
   static final SmsTransactionService _instance = SmsTransactionService._internal();
@@ -14,11 +18,25 @@ class SmsTransactionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
 
+  // Privacy configuration: if false, rawMessage is hashed before save.
+  bool storePlainRawMessage = false;
+  bool persistRemoteTransactions = false; // user can opt-in to cloud storage
+
+  // Simple in-memory cache to speed access before Firestore stream delivers.
+  final Map<String, SmsTransactionModel> _memoryCache = {};
+
+  void setStorePlainRawMessage(bool value) {
+    storePlainRawMessage = value;
+  }
+  void setPersistRemoteTransactions(bool value) {
+    persistRemoteTransactions = value;
+  }
+
   // Common SMS sender IDs for banks and payment apps
   static const List<String> _transactionSenders = [
     // Banks
-    'HDFCBK', 'ICICIB', 'SBIIN', 'AXISNB', 'PNBSMS', 'BOISMS', 'CNRBBK',
-    'UNIONB', 'KTKBNK', 'YESBNK', 'INDUSB', 'SCBANK', 'CITI', 'HSBC',
+    'HDFCBK', 'ICICIB', 'SBIIN', 'SBIBNK', 'SBIUPI', 'AXISNB', 'AXISBK', 'PNBSMS', 'BOISMS', 'CNRBBK',
+    'UNIONB', 'KTKBNK', 'YESBNK', 'INDUSB', 'SCBANK', 'CITI', 'HSBC', 'IDFCFB', 'KOTAKB', 'FEDBNK', 'BOBARB',
     // UPI Apps
     'PAYTM', 'PHONEPE', 'GPAY', 'BHIMUPI', 'AMAZONP', 'MOBIKW',
     // Payment Gateways
@@ -76,9 +94,10 @@ class SmsTransactionService {
       final transactions = <SmsTransactionModel>[];
 
       for (final sms in messages) {
-        // Filter by sender
+        // Filter by sender OR by content heuristics
         final sender = sms.address ?? '';
-        if (!_isTransactionSender(sender)) continue;
+        final body = sms.body ?? '';
+        if (!_isTransactionSender(sender) && !_looksLikeTransactionMessage(body)) continue;
 
         // Filter by date
         final smsDate = DateTime.fromMillisecondsSinceEpoch(sms.date ?? 0);
@@ -87,7 +106,7 @@ class SmsTransactionService {
 
         // Parse transaction from SMS body
         final transaction = _parseSmsTransaction(
-          sms.body ?? '',
+          body,
           smsDate,
           sender,
           user.uid,
@@ -111,6 +130,18 @@ class SmsTransactionService {
     return _transactionSenders.any((s) => normalizedSender.contains(s));
   }
 
+  /// Heuristic: message looks like a transaction even if sender is unknown
+  bool _looksLikeTransactionMessage(String message) {
+    final upper = message.toUpperCase();
+    final hasAmount = _extractAmount(message) != null;
+    final hasTxnKeyword = upper.contains('DEBIT') || upper.contains('DEBITED') || upper.contains('CREDIT') ||
+        upper.contains('CREDITED') || upper.contains('RECEIVED') || upper.contains('PAID') ||
+        upper.contains('PAYMENT') || upper.contains('PURCHASE') || upper.contains('SPENT') ||
+        upper.contains('WITHDRAWN') || upper.contains('UPI') || upper.contains('NEFT') ||
+        upper.contains('IMPS') || upper.contains('RTGS') || upper.contains('UTR') || upper.contains('RRN');
+    return hasAmount && hasTxnKeyword;
+  }
+
   /// Parse SMS message to extract transaction details
   SmsTransactionModel? _parseSmsTransaction(
     String message,
@@ -123,14 +154,20 @@ class SmsTransactionService {
 
       // Determine transaction type
       TransactionType? type;
-      if (upperMessage.contains('DEBITED') || 
-          upperMessage.contains('SPENT') || 
+      if (upperMessage.contains('DEBITED') ||
+          upperMessage.contains('DEBIT ') ||
+          upperMessage.contains('SPENT') ||
           upperMessage.contains('PAID') ||
-          upperMessage.contains('WITHDRAWN')) {
+          upperMessage.contains('PURCHASE') ||
+          upperMessage.contains('WITHDRAWN') ||
+          upperMessage.contains('SENT') ||
+          upperMessage.contains('TXN DEBIT')) {
         type = TransactionType.debit;
-      } else if (upperMessage.contains('CREDITED') || 
+      } else if (upperMessage.contains('CREDITED') ||
+                 upperMessage.contains('CREDIT ') ||
                  upperMessage.contains('RECEIVED') ||
-                 upperMessage.contains('DEPOSITED')) {
+                 upperMessage.contains('DEPOSITED') ||
+                 upperMessage.contains('TXN CREDIT')) {
         type = TransactionType.credit;
       }
 
@@ -149,8 +186,8 @@ class SmsTransactionService {
       final referenceNumber = _extractReferenceNumber(message);
       final category = _categorizeTransaction(merchantName, message);
 
-      return SmsTransactionModel(
-        id: '${timestamp.millisecondsSinceEpoch}_$sender',
+      final model = SmsTransactionModel(
+        id: '${timestamp.millisecondsSinceEpoch}_${sender}_${_shortFingerprint(message)}',
         userId: userId,
         type: type,
         amount: amount,
@@ -161,10 +198,12 @@ class SmsTransactionService {
         mode: mode,
         accountNumber: accountNumber,
         referenceNumber: referenceNumber,
-        rawMessage: message,
+        rawMessage: storePlainRawMessage ? message : _hashMessage(message),
         category: category,
         senderNumber: sender,
       );
+      _memoryCache[model.id] = model;
+      return model;
     } catch (e) {
       debugPrint('Error parsing SMS transaction: $e');
       return null;
@@ -173,10 +212,10 @@ class SmsTransactionService {
 
   /// Extract amount from SMS
   double? _extractAmount(String message) {
-    // Patterns: Rs. 1,234.56, INR 1234.56, ₹ 1234
+    // Patterns: Rs.1,234.56 | Rs 1,234.5 | INR 1234 | ₹1,234.00
     final patterns = [
-      RegExp(r'(?:RS\.?|INR|₹)\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', caseSensitive: false),
-      RegExp(r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s?(?:RS|INR|₹)', caseSensitive: false),
+      RegExp(r'(?:RS\.?|INR|₹)\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)', caseSensitive: false),
+      RegExp(r'(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s?(?:RS|INR|₹)', caseSensitive: false),
     ];
 
     for (final pattern in patterns) {
@@ -192,10 +231,10 @@ class SmsTransactionService {
 
   /// Extract merchant/payee name
   String? _extractMerchantName(String message) {
-    // Patterns: "to MERCHANT", "at MERCHANT", "from MERCHANT"
+    // Patterns: "to MERCHANT", "at MERCHANT", "from MERCHANT", "via MERCHANT", "by MERCHANT"
     final patterns = [
-      RegExp(r'(?:to|at)\s+([A-Z][A-Z\s]{2,30})', caseSensitive: false),
-      RegExp(r'from\s+([A-Z][A-Z\s]{2,30})', caseSensitive: false),
+      RegExp(r'(?:to|at|via|by)\s+([A-Za-z0-9&\-\.\s]{2,40})', caseSensitive: false),
+      RegExp(r'from\s+([A-Za-z0-9&\-\.\s]{2,40})', caseSensitive: false),
     ];
 
     for (final pattern in patterns) {
@@ -210,7 +249,7 @@ class SmsTransactionService {
 
   /// Extract bank name
   String? _extractBankName(String message) {
-    final banks = ['HDFC', 'ICICI', 'SBI', 'AXIS', 'PNB', 'BOI', 'CANARA', 'UNION', 'KOTAK', 'YES', 'INDUSIND'];
+    final banks = ['HDFC', 'ICICI', 'SBI', 'AXIS', 'PNB', 'BOI', 'CANARA', 'UNION', 'KOTAK', 'YES', 'INDUSIND', 'IDFC', 'FEDERAL', 'BOB', 'CITI', 'HSBC'];
     
     for (final bank in banks) {
       if (message.toUpperCase().contains(bank)) {
@@ -253,7 +292,7 @@ class SmsTransactionService {
 
   /// Extract reference/transaction number
   String? _extractReferenceNumber(String message) {
-    final pattern = RegExp(r'(?:REF|UPI|TXN)\s?(?:NO\.?|ID\.?|#)?\s?:?\s?([A-Z0-9]{6,20})', caseSensitive: false);
+    final pattern = RegExp(r'(?:REF(?:ERENCE)?|UPI|TXN|UTR|RRN)\s?(?:NO\.?|ID\.?|#)?\s?:?\s?([A-Z0-9\-]{6,30})', caseSensitive: false);
     final match = pattern.firstMatch(message);
     return match?.group(1);
   }
@@ -312,12 +351,17 @@ class SmsTransactionService {
             .doc(transaction.userId)
             .collection('sms_transactions')
             .doc(transaction.id);
-
         batch.set(docRef, transaction.toMap(), SetOptions(merge: true));
+        _memoryCache[transaction.id] = transaction;
       }
-
-      await batch.commit();
-      debugPrint('✅ Saved ${transactions.length} SMS transactions');
+      // Always save locally
+      await LocalSmsTransactionStore().saveAll(transactions);
+      if (persistRemoteTransactions) {
+        await batch.commit();
+        debugPrint('✅ Saved ${transactions.length} SMS transactions (remote + local)');
+      } else {
+        debugPrint('💾 Saved ${transactions.length} SMS transactions locally (remote disabled)');
+      }
     } catch (e) {
       debugPrint('❌ Error saving SMS transactions: $e');
     }
@@ -325,7 +369,19 @@ class SmsTransactionService {
 
   /// Get user's SMS transactions from Firestore
   Stream<List<SmsTransactionModel>> getUserSmsTransactions(String userId) {
-    return _firestore
+    // If remote persistence disabled, stream directly from local store
+    if (!persistRemoteTransactions) {
+      // ensure local cache has been initialized
+      return LocalSmsTransactionStore().watchUser(userId);
+    }
+    // Emit memory cache first (if any) then Firestore stream
+    final controller = StreamController<List<SmsTransactionModel>>();
+    // Initial emit from cache filtered by userId
+    final initial = _memoryCache.values.where((m) => m.userId == userId).toList()
+      ..sort((a,b)=> b.timestamp.compareTo(a.timestamp));
+    controller.add(initial);
+
+    _firestore
         .collection('users')
         .doc(userId)
         .collection('sms_transactions')
@@ -335,7 +391,15 @@ class SmsTransactionService {
           return snapshot.docs
               .map((doc) => SmsTransactionModel.fromMap(doc.data()))
               .toList();
+        })
+        .listen((remoteList) {
+          for (final t in remoteList) {
+            _memoryCache[t.id] = t;
+          }
+          controller.add(remoteList);
         });
+
+    return controller.stream;
   }
 
   /// Sync SMS transactions (read and save)
@@ -345,5 +409,20 @@ class SmsTransactionService {
       await saveSmsTransactions(transactions);
     }
     return transactions.length;
+  }
+
+  // Create a short stable-ish fingerprint of message content
+  String _shortFingerprint(String input) {
+    int sum = 0;
+    for (final code in input.codeUnits) {
+      sum = (sum * 131 + code) & 0x7fffffff;
+    }
+    return (sum % 100000000).toString();
+  }
+
+  String _hashMessage(String input) {
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
   }
 }

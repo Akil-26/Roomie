@@ -87,8 +87,8 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
     setState(() => _isSyncing = true);
 
     try {
-      // Sync SMS from last 90 days
-      final fromDate = DateTime.now().subtract(const Duration(days: 90));
+      // Sync SMS from last 365 days to capture more history
+      final fromDate = DateTime.now().subtract(const Duration(days: 365));
       final count = await _smsService.syncSmsTransactions(fromDate: fromDate);
       
       if (mounted) {
@@ -229,8 +229,9 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
+    // Use fixed paddings for consistent look across devices
+    const horizontalPad = 16.0;
+    const verticalPad = 12.0;
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -244,11 +245,9 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
                 children: [
                   // Title
                   Padding(
-                    padding: EdgeInsets.only(
-                      left: screenWidth * 0.04,
-                      right: screenWidth * 0.04,
-                      top: screenHeight * 0.015,
-                      bottom: screenHeight * 0.015,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: horizontalPad,
+                      vertical: verticalPad,
                     ),
                     child: Row(
                       children: [
@@ -261,30 +260,34 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
                             ),
                           ),
                         ),
-                        if (_selectedTab == 1) // SMS tab sync button
-                          IconButton(
-                            icon: _isSyncing
-                                ? SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: cs.primary,
-                                    ),
-                                  )
-                                : const Icon(Icons.sync),
-                            onPressed: _isSyncing ? null : _syncSmsTransactions,
-                            tooltip: 'Sync SMS Transactions',
-                            color: cs.onSurface,
-                          ),
+                        // Top-right refresh/sync for both tabs
+                        IconButton(
+                          icon: _selectedTab == 1
+                              ? (_isSyncing
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: cs.primary,
+                                      ),
+                                    )
+                                  : const Icon(Icons.sync))
+                              : const Icon(Icons.refresh),
+                          onPressed: (_selectedTab == 1)
+                              ? (_isSyncing ? null : _syncSmsTransactions)
+                              : _refreshExpenses,
+                          tooltip: _selectedTab == 1 ? 'Sync SMS Transactions' : 'Refresh Expenses',
+                          color: cs.onSurface,
+                        ),
                       ],
                     ),
                   ),
                   // Custom Tab Buttons
                   Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: screenWidth * 0.04,
-                      vertical: screenHeight * 0.01,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: horizontalPad,
+                      vertical: 8,
                     ),
                     child: Row(
                       children: [
@@ -300,7 +303,7 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
                             theme: theme,
                           ),
                         ),
-                        SizedBox(width: screenWidth * 0.03),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: _buildCustomTab(
                             label: 'SMS Transactions',
@@ -333,6 +336,53 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         ],
       ),
     );
+  }
+
+  // Refresh expenses in Roomie tab without creating extra stream subscriptions
+  Future<void> _refreshExpenses() async {
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final currentUser = authService.currentUser;
+      if (currentUser == null) return;
+
+      setState(() => _isLoadingExpenses = true);
+
+      final list = await _expenseService.getUserExpenses(currentUser.uid).first;
+      double spent = 0.0;
+      double received = 0.0;
+      for (final exp in list) {
+        final myShare = exp.splitAmounts[currentUser.uid] ?? 0.0;
+        final iPaid = exp.paymentStatus[currentUser.uid] == true;
+        if (iPaid) spent += myShare;
+
+        if (exp.createdBy == currentUser.uid) {
+          for (final p in exp.participants) {
+            if (p == currentUser.uid) continue;
+            final pPaid = exp.paymentStatus[p] == true;
+            if (pPaid) received += (exp.splitAmounts[p] ?? 0.0);
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _expenses = list;
+          _totalSpent = spent;
+          _totalReceived = received;
+          _isLoadingExpenses = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Expenses refreshed')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingExpenses = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to refresh: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildCustomTab({
@@ -419,10 +469,7 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         ),
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 4,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             itemCount: _expenses.length,
             itemBuilder: (context, index) {
               final exp = _expenses[index];
@@ -540,7 +587,7 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         else
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               itemCount: _smsTransactions.length,
               itemBuilder: (context, index) {
                 return _SmsTransactionCard(transaction: _smsTransactions[index]);
@@ -599,17 +646,23 @@ class _UserExpenseSummary extends StatelessWidget {
               icon: Icons.arrow_downward,
             ),
           ),
-          const SizedBox(width: 8),
-          Chip(
-            label: Text(
-              'Net ${net >= 0 ? '+' : ''}${net.toStringAsFixed(2)}',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: net >= 0 ? cs.onPrimaryContainer : cs.onErrorContainer,
-                fontWeight: FontWeight.w600,
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Chip(
+                  label: Text(
+                    'Net ${net >= 0 ? '+' : ''}${net.toStringAsFixed(2)}',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: net >= 0 ? cs.onPrimaryContainer : cs.onErrorContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  backgroundColor: net >= 0 ? cs.primaryContainer : cs.errorContainer,
+                ),
               ),
             ),
-            backgroundColor:
-                net >= 0 ? cs.primaryContainer : cs.errorContainer,
           ),
         ],
       ),
@@ -714,16 +767,23 @@ class _SmsExpenseSummary extends StatelessWidget {
               icon: Icons.arrow_downward,
             ),
           ),
-          const SizedBox(width: 8),
-          Chip(
-            label: Text(
-              'Net ${net >= 0 ? '+' : ''}₹${net.toStringAsFixed(2)}',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: net >= 0 ? cs.onPrimaryContainer : cs.onErrorContainer,
-                fontWeight: FontWeight.w600,
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Chip(
+                  label: Text(
+                    'Net ${net >= 0 ? '+' : ''}₹${net.toStringAsFixed(2)}',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: net >= 0 ? cs.onPrimaryContainer : cs.onErrorContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  backgroundColor: net >= 0 ? cs.primaryContainer : cs.errorContainer,
+                ),
               ),
             ),
-            backgroundColor: net >= 0 ? cs.primaryContainer : cs.errorContainer,
           ),
         ],
       ),

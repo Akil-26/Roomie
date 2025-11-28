@@ -12,6 +12,7 @@ import 'package:roomie/presentation/widgets/auth_wrapper.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
 import 'package:roomie/core/core.dart';
 import 'package:roomie/core/logger.dart';
+import 'package:roomie/data/datasources/local_sms_transaction_store.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -66,6 +67,14 @@ void main() async {
     AppLogger.d('✅ Notifications initialized');
   } catch (e) {
     AppLogger.e('❌ Notifications failed: $e');
+  }
+
+  // Initialize local encrypted storage (Hive) for SMS transactions
+  try {
+    await LocalSmsTransactionStore().init();
+    AppLogger.d('✅ Local SMS transaction store initialized');
+  } catch (e) {
+    AppLogger.e('❌ Local store init failed: $e');
   }
 
   AppLogger.d('🚀 Starting Roomie App (Firestore + Cloudinary mode)...');
