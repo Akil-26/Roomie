@@ -8,6 +8,7 @@ import 'package:roomie/data/models/expense_model.dart';
 import 'package:roomie/data/models/sms_transaction_model.dart';
 import 'package:roomie/presentation/widgets/expense_card.dart';
 import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
+import 'package:roomie/data/datasources/local_sms_transaction_store.dart';
 
 class UserExpensesScreen extends StatefulWidget {
   const UserExpensesScreen({super.key});
@@ -27,6 +28,15 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
   bool _isLoadingSms = true;
   bool _isSyncing = false;
   bool _hasSmsPermission = false;
+  bool _autoSyncAttempted = false; // prevent infinite auto-sync loops
+  DateTime? _lastManualSyncAt; // debounce manual sync
+
+  // Pagination for SMS tab
+  final ScrollController _smsScrollController = ScrollController();
+  static const int _smsPageSize = 100;
+  int _smsOffset = 0;
+  bool _smsHasMore = true;
+  List<SmsTransactionModel> _visibleSmsTransactions = [];
   
   double _totalSpent = 0.0; // You paid (from group expenses)
   double _totalReceived = 0.0; // Others paid you (from group expenses)
@@ -45,6 +55,7 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         setState(() => _selectedTab = _tabController.index);
       }
     });
+    _smsScrollController.addListener(_onSmsScroll);
     _checkSmsPermission();
     _loadUserExpenses();
     _loadSmsTransactions();
@@ -53,6 +64,7 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
   @override
   void dispose() {
     _tabController.dispose();
+    _smsScrollController.dispose();
     super.dispose();
   }
 
@@ -79,6 +91,12 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
   }
 
   Future<void> _syncSmsTransactions() async {
+    // Debounce: avoid rapid repeated calls within 3 seconds
+    final now = DateTime.now();
+    if (_lastManualSyncAt != null && now.difference(_lastManualSyncAt!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastManualSyncAt = now;
     if (!_hasSmsPermission) {
       _requestSmsPermission();
       return;
@@ -98,6 +116,30 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
             behavior: SnackBarBehavior.floating,
           ),
         );
+        // Immediately refresh view from local store to show data without waiting for stream
+        try {
+          final authService = Provider.of<AuthService>(context, listen: false);
+          final currentUser = authService.currentUser;
+          if (currentUser != null) {
+            final localList = LocalSmsTransactionStore().getUser(currentUser.uid);
+            double debit = 0.0;
+            double credit = 0.0;
+            for (final txn in localList) {
+              if (txn.type == TransactionType.debit) {
+                debit += txn.amount;
+              } else {
+                credit += txn.amount;
+              }
+            }
+            setState(() {
+              _smsTransactions = localList;
+              _smsDebit = debit;
+              _smsCredit = credit;
+              _isLoadingSms = false;
+            });
+          }
+        } catch (_) {}
+        // Also keep the stream-based load active
         _loadSmsTransactions();
       }
     } catch (e) {
@@ -123,6 +165,13 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
       final currentUser = authService.currentUser;
       if (currentUser == null) return;
 
+      // Fallback timeout to avoid infinite loading if stream never emits
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted && _isLoadingSms) {
+          setState(() => _isLoadingSms = false);
+        }
+      });
+
       _smsService.getUserSmsTransactions(currentUser.uid).listen((list) {
         double debit = 0.0;
         double credit = 0.0;
@@ -141,7 +190,13 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
             _smsDebit = debit;
             _smsCredit = credit;
             _isLoadingSms = false;
+            _rebuildSmsPagination(currentUser.uid);
           });
+          // Auto-trigger sync ONCE if empty and not attempted yet
+          if (list.isEmpty && !_isSyncing && !_autoSyncAttempted) {
+            _autoSyncAttempted = true;
+            _syncSmsTransactions();
+          }
         }
       });
     } catch (e) {
@@ -149,6 +204,28 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         setState(() => _isLoadingSms = false);
       }
       debugPrint('Error loading SMS transactions: $e');
+    }
+  }
+
+  void _rebuildSmsPagination(String userId) {
+    _smsOffset = 0;
+    final firstPage = LocalSmsTransactionStore().getUserPaged(userId, offset: _smsOffset, limit: _smsPageSize);
+    _visibleSmsTransactions = firstPage;
+    _smsHasMore = _visibleSmsTransactions.length == _smsPageSize;
+  }
+
+  void _onSmsScroll() async {
+    if (!_smsHasMore || _isLoadingSms) return;
+    if (_smsScrollController.position.pixels >= _smsScrollController.position.maxScrollExtent - 100) {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final currentUser = authService.currentUser;
+      if (currentUser == null) return;
+      setState(() {
+        _smsOffset += _smsPageSize;
+        final nextPage = LocalSmsTransactionStore().getUserPaged(currentUser.uid, offset: _smsOffset, limit: _smsPageSize);
+        _visibleSmsTransactions.addAll(nextPage);
+        _smsHasMore = nextPage.length == _smsPageSize;
+      });
     }
   }
 
@@ -587,10 +664,23 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         else
           Expanded(
             child: ListView.builder(
+              controller: _smsScrollController,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              itemCount: _smsTransactions.length,
+              itemCount: _visibleSmsTransactions.length + (_smsHasMore ? 1 : 0),
               itemBuilder: (context, index) {
-                return _SmsTransactionCard(transaction: _smsTransactions[index]);
+                if (_smsHasMore && index == _visibleSmsTransactions.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+                      ),
+                    ),
+                  );
+                }
+                return _SmsTransactionCard(transaction: _visibleSmsTransactions[index]);
               },
             ),
           ),
@@ -629,7 +719,7 @@ class _UserExpenseSummary extends StatelessWidget {
               label: 'Spent',
               value: totalSpent,
               valueColor: cs.error,
-              icon: Icons.arrow_upward,
+              icon: Icons.trending_down,
             ),
           ),
           Container(
@@ -643,7 +733,7 @@ class _UserExpenseSummary extends StatelessWidget {
               label: 'Received',
               value: totalReceived,
               valueColor: cs.primary,
-              icon: Icons.arrow_downward,
+              icon: Icons.trending_up,
             ),
           ),
           Expanded(
@@ -750,7 +840,7 @@ class _SmsExpenseSummary extends StatelessWidget {
               label: 'Spent',
               value: totalDebit,
               valueColor: cs.error,
-              icon: Icons.arrow_upward,
+              icon: Icons.trending_down,
             ),
           ),
           Container(
@@ -764,7 +854,7 @@ class _SmsExpenseSummary extends StatelessWidget {
               label: 'Received',
               value: totalCredit,
               valueColor: cs.primary,
-              icon: Icons.arrow_downward,
+              icon: Icons.trending_up,
             ),
           ),
           Expanded(
@@ -802,37 +892,45 @@ class _SmsExpenseSummary extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: valueColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(6),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: valueColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(icon, color: valueColor, size: 16),
             ),
-            child: Icon(icon, color: valueColor, size: 16),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontSize: 10,
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontSize: 10,
+                  ),
                 ),
-              ),
-              Text(
-                '₹${value.toStringAsFixed(2)}',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: cs.onSurface,
-                  fontWeight: FontWeight.bold,
+                Text(
+                  '₹${value.toStringAsFixed(2)}',
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -868,12 +966,12 @@ class _SmsTransactionCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: (isDebit ? cs.errorContainer : cs.primaryContainer),
+                  color: (isDebit ? cs.error : cs.primary),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  isDebit ? Icons.arrow_upward : Icons.arrow_downward,
-                  color: isDebit ? cs.error : cs.primary,
+                  isDebit ? Icons.trending_down : Icons.trending_up,
+                  color: isDebit ? cs.onError : cs.onPrimary,
                   size: 20,
                 ),
               ),
@@ -1053,12 +1151,12 @@ class _TransactionDetailsSheet extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: (isDebit ? cs.errorContainer : cs.primaryContainer),
+                      color: (isDebit ? cs.error : cs.primaryContainer),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Icon(
-                      isDebit ? Icons.arrow_upward : Icons.arrow_downward,
-                      color: isDebit ? cs.error : cs.primary,
+                      isDebit ? Icons.trending_down : Icons.trending_up,
+                      color: isDebit ? cs.onErrorContainer : cs.onPrimaryContainer,
                       size: 32,
                     ),
                   ),

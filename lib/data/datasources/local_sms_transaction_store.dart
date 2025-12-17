@@ -1,9 +1,12 @@
+// ignore_for_file: unused_import
+
 import 'dart:async';
 import 'package:hive_flutter/hive_flutter.dart';
 // ignore: unnecessary_import
 import 'package:hive/hive.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:roomie/data/models/sms_transaction_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class LocalSmsTransactionStore {
   static final LocalSmsTransactionStore _instance = LocalSmsTransactionStore._internal();
@@ -42,7 +45,8 @@ class LocalSmsTransactionStore {
 
   void _loadCache() {
     if (_box == null) return;
-    _cache = _box!.values
+    _cache = _box!.keys
+        .map((k) => _box!.get(k))
         .whereType<Map>()
         .map((raw) => SmsTransactionModel.fromMap(Map<String, dynamic>.from(raw)))
         .toList()
@@ -54,7 +58,26 @@ class LocalSmsTransactionStore {
     if (_box == null) return;
     final batchMap = <String, Map<String, dynamic>>{};
     for (final t in transactions) {
-      batchMap[t.id] = t.toMap();
+      final m = Map<String, dynamic>.from(t.toMap());
+      final ts = m['timestamp'];
+      try {
+        if (ts is DateTime) {
+          m['timestamp'] = ts.millisecondsSinceEpoch;
+        } else if (ts is int) {
+          m['timestamp'] = ts;
+        } else if (ts is num) {
+          m['timestamp'] = ts.toInt();
+        } else {
+          final dynamicTs = ts as dynamic;
+          final maybeDate = dynamicTs?.toDate?.call();
+          if (maybeDate is DateTime) {
+            m['timestamp'] = maybeDate.millisecondsSinceEpoch;
+          }
+        }
+      } catch (_) {
+        // If conversion fails, leave as-is; model deserializer will handle.
+      }
+      batchMap[t.id] = m;
     }
     await _box!.putAll(batchMap);
     _loadCache();
@@ -66,5 +89,13 @@ class LocalSmsTransactionStore {
 
   Stream<List<SmsTransactionModel>> watchUser(String userId) {
     return _controller.stream.map((all) => all.where((t) => t.userId == userId).toList());
+  }
+
+  bool get isEmpty => _cache.isEmpty;
+  int get count => _cache.length;
+
+  List<SmsTransactionModel> getUserPaged(String userId, {required int offset, required int limit}) {
+    final list = _cache.where((t) => t.userId == userId);
+    return list.skip(offset).take(limit).toList();
   }
 }

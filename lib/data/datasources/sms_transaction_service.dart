@@ -21,6 +21,8 @@ class SmsTransactionService {
   // Privacy configuration: if false, rawMessage is hashed before save.
   bool storePlainRawMessage = false;
   bool persistRemoteTransactions = false; // user can opt-in to cloud storage
+  bool _hydrationAttempted = false; // remote -> local migration once
+  int _idSequence = 0; // uniqueness booster
 
   // Simple in-memory cache to speed access before Firestore stream delivers.
   final Map<String, SmsTransactionModel> _memoryCache = {};
@@ -186,8 +188,9 @@ class SmsTransactionService {
       final referenceNumber = _extractReferenceNumber(message);
       final category = _categorizeTransaction(merchantName, message);
 
+      final uniquePart = _idSequence++;
       final model = SmsTransactionModel(
-        id: '${timestamp.millisecondsSinceEpoch}_${sender}_${_shortFingerprint(message)}',
+        id: '${timestamp.millisecondsSinceEpoch}_${uniquePart}_${sender}_${_shortFingerprint(message)}',
         userId: userId,
         type: type,
         amount: amount,
@@ -371,8 +374,17 @@ class SmsTransactionService {
   Stream<List<SmsTransactionModel>> getUserSmsTransactions(String userId) {
     // If remote persistence disabled, stream directly from local store
     if (!persistRemoteTransactions) {
-      // ensure local cache has been initialized
-      return LocalSmsTransactionStore().watchUser(userId);
+      final store = LocalSmsTransactionStore();
+      final controller = StreamController<List<SmsTransactionModel>>();
+      // Emit current cached (may be empty) immediately so UI can stop loading
+      controller.add(store.getUser(userId));
+      // Attempt one-time hydration from remote if local empty but remote has docs
+      _ensureLocalHydrated(userId, controller);
+      // Forward future updates
+      store.watchUser(userId).listen((list) {
+        controller.add(list);
+      });
+      return controller.stream;
     }
     // Emit memory cache first (if any) then Firestore stream
     final controller = StreamController<List<SmsTransactionModel>>();
@@ -424,5 +436,28 @@ class SmsTransactionService {
     final bytes = utf8.encode(input);
     final digest = sha256.convert(bytes);
     return digest.toString();
+  }
+
+  Future<void> _ensureLocalHydrated(String userId, StreamController<List<SmsTransactionModel>> controller) async {
+    if (_hydrationAttempted) return;
+    _hydrationAttempted = true;
+    try {
+      final store = LocalSmsTransactionStore();
+      if (!store.isEmpty) return; // already have local data
+      // Fetch remote snapshots (read-only) if any exist
+      final remote = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('sms_transactions')
+          .orderBy('timestamp', descending: true)
+          .get();
+      if (remote.docs.isEmpty) return;
+      final list = remote.docs.map((d) => SmsTransactionModel.fromMap(d.data())).toList();
+      await LocalSmsTransactionStore().saveAll(list);
+      controller.add(LocalSmsTransactionStore().getUser(userId));
+      debugPrint('🔄 Hydrated local SMS store with ${list.length} remote transactions');
+    } catch (e) {
+      debugPrint('⚠️ Hydration failed: $e');
+    }
   }
 }

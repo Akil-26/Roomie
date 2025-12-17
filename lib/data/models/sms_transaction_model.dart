@@ -68,6 +68,19 @@ class SmsTransactionModel {
 
   // Create from Firestore map
   factory SmsTransactionModel.fromMap(Map<String, dynamic> map) {
+    DateTime parseTimestamp(dynamic ts) {
+      if (ts is Timestamp) return ts.toDate();
+      if (ts is int) return DateTime.fromMillisecondsSinceEpoch(ts);
+      if (ts is num) return DateTime.fromMillisecondsSinceEpoch(ts.toInt());
+      // Fallback: try parsing string
+      if (ts is String) {
+        final tryInt = int.tryParse(ts);
+        if (tryInt != null) return DateTime.fromMillisecondsSinceEpoch(tryInt);
+        return DateTime.tryParse(ts) ?? DateTime.now();
+      }
+      return DateTime.now();
+    }
+
     return SmsTransactionModel(
       id: map['id'] ?? '',
       userId: map['userId'] ?? '',
@@ -76,7 +89,7 @@ class SmsTransactionModel {
         orElse: () => TransactionType.debit,
       ),
       amount: (map['amount'] as num?)?.toDouble() ?? 0.0,
-      timestamp: (map['timestamp'] as Timestamp).toDate(),
+      timestamp: parseTimestamp(map['timestamp']),
       merchantName: map['merchantName'],
       bankName: map['bankName'],
       upiId: map['upiId'],

@@ -13,6 +13,7 @@ import 'package:roomie/data/datasources/notification_service.dart';
 import 'package:roomie/core/core.dart';
 import 'package:roomie/core/logger.dart';
 import 'package:roomie/data/datasources/local_sms_transaction_store.dart';
+import 'package:roomie/data/datasources/sms_transaction_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +76,16 @@ void main() async {
     AppLogger.d('✅ Local SMS transaction store initialized');
   } catch (e) {
     AppLogger.e('❌ Local store init failed: $e');
+  }
+
+  // Configure SMS service for local-only, privacy-preserving storage
+  try {
+    final smsService = SmsTransactionService();
+    smsService.setPersistRemoteTransactions(false); // local-only
+    smsService.setStorePlainRawMessage(false);      // keep hashed raw SMS
+    AppLogger.d('🔒 SMS service configured: local-only, hashed raw messages');
+  } catch (e) {
+    AppLogger.e('❌ SMS service configuration failed: $e');
   }
 
   AppLogger.d('🚀 Starting Roomie App (Firestore + Cloudinary mode)...');
