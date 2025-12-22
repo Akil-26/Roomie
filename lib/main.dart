@@ -10,10 +10,14 @@ import 'package:roomie/presentation/screens/onboarding/permissions_onboarding_s.
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/presentation/widgets/auth_wrapper.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
+import 'package:roomie/presentation/screens/chat/chat_screen.dart';
 import 'package:roomie/core/core.dart';
 import 'package:roomie/core/logger.dart';
 import 'package:roomie/data/datasources/local_sms_transaction_store.dart';
 import 'package:roomie/data/datasources/sms_transaction_service.dart';
+
+// Global navigator key for notification deep-linking
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,8 +66,9 @@ void main() async {
     );
   }
 
-  // Initialize notifications
+  // Initialize notifications with navigator key
   try {
+    NotificationService().setNavigatorKey(navigatorKey);
     await NotificationService().initialize();
     AppLogger.d('✅ Notifications initialized');
   } catch (e) {
@@ -107,9 +112,23 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Roomie',
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
+      onGenerateRoute: (settings) {
+        // Handle deep-link routes with parameters
+        if (settings.name?.startsWith('/chat/') == true) {
+          final chatId = settings.name!.replaceFirst('/chat/', '');
+          return MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatData: {'id': chatId},
+              chatType: 'individual', // Will be determined from chatId
+            ),
+          );
+        }
+        return null; // Use regular routes
+      },
       routes: {
         '/': (context) => const AuthWrapper(),
         '/home': (context) => const HomeScreen(),

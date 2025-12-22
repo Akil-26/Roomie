@@ -247,8 +247,8 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         }
       });
 
-      // Subscribe once and compute summary
-      _expenseService.getUserExpenses(currentUser.uid).listen(
+      // Load only chat payment expenses (Roomie Expense section)
+      _expenseService.getChatPaymentExpenses(currentUser.uid).listen(
         (list) {
           double spent = 0.0;
           double received = 0.0;

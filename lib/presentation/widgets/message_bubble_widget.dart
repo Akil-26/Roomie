@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:roomie/data/models/message_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:roomie/presentation/widgets/payment_request_card.dart';
 
 class MessageBubbleWidget extends StatefulWidget {
   final MessageModel message;
@@ -242,88 +243,96 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
               ),
             ),
 
-          // Message bubble
-          Row(
-            mainAxisAlignment:
-                widget.isCurrentUser
-                    ? MainAxisAlignment.end
-                    : MainAxisAlignment.start,
-            children: [
-              if (!widget.isCurrentUser) ...[const SizedBox(width: 48)],
-              Flexible(
-                child: GestureDetector(
-                  onLongPress: widget.isCurrentUser ? _toggleOptions : null,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: bubbleColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(18),
-                        topRight: const Radius.circular(18),
-                        bottomLeft: Radius.circular(
-                          widget.isCurrentUser ? 18 : 4,
+          // Message bubble (payment requests render without bubble)
+          if (widget.message.type == MessageType.paymentRequest)
+            // Payment request card renders standalone without bubble wrapper
+            Padding(
+              padding: const EdgeInsets.only(left: 48, right: 48),
+              child: _buildMessageContent(textColor),
+            )
+          else
+            // Regular message with bubble styling
+            Row(
+              mainAxisAlignment:
+                  widget.isCurrentUser
+                      ? MainAxisAlignment.end
+                      : MainAxisAlignment.start,
+              children: [
+                if (!widget.isCurrentUser) ...[const SizedBox(width: 48)],
+                Flexible(
+                  child: GestureDetector(
+                    onLongPress: widget.isCurrentUser ? _toggleOptions : null,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: bubbleColor,
+                        borderRadius: BorderRadius.only(
+                          topLeft: const Radius.circular(18),
+                          topRight: const Radius.circular(18),
+                          bottomLeft: Radius.circular(
+                            widget.isCurrentUser ? 18 : 4,
+                          ),
+                          bottomRight: Radius.circular(
+                            widget.isCurrentUser ? 4 : 18,
+                          ),
                         ),
-                        bottomRight: Radius.circular(
-                          widget.isCurrentUser ? 4 : 18,
-                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Message content
-                        _buildMessageContent(textColor),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Message content
+                          _buildMessageContent(textColor),
 
-                        const SizedBox(height: 4),
+                          const SizedBox(height: 4),
 
-                        // Message info
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            if (widget.message.editedAt != null) ...[
-                              Icon(
-                                Icons.edit,
-                                size: 12,
-                                color: textColor.withOpacity(0.7),
-                              ),
-                              const SizedBox(width: 4),
-                            ],
-                            Text(
-                              timeago.format(widget.message.timestamp),
-                              style: textTheme.bodySmall?.copyWith(
-                                color: textColor.withOpacity(0.7),
-                                fontSize: 11,
-                              ),
-                            ),
-                            if (widget.isCurrentUser) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                _getStatusIcon(widget.message.status),
-                                size: 12,
-                                color: _getStatusColor(
-                                  widget.message.status,
-                                  colorScheme,
+                          // Message info
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              if (widget.message.editedAt != null) ...[
+                                Icon(
+                                  Icons.edit,
+                                  size: 12,
+                                  color: textColor.withOpacity(0.7),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                timeago.format(widget.message.timestamp),
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: textColor.withOpacity(0.7),
+                                  fontSize: 11,
                                 ),
                               ),
+                              if (widget.isCurrentUser) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  _getStatusIcon(widget.message.status),
+                                  size: 12,
+                                  color: _getStatusColor(
+                                    widget.message.status,
+                                    colorScheme,
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              if (widget.isCurrentUser) ...[const SizedBox(width: 48)],
-            ],
-          ),
+                if (widget.isCurrentUser) ...[const SizedBox(width: 48)],
+              ],
+            ),
 
           // Message options
           if (_showOptions)
@@ -391,10 +400,16 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         return _buildTodoMessage(textColor);
       case MessageType.system:
         return _buildSystemMessage(textColor);
+      case MessageType.paymentRequest:
+        return _buildPaymentRequestMessage();
     }
   }
 
   Widget _buildTextMessage(Color textColor) {
+    // Payment requests are now handled by _buildPaymentRequestMessage()
+    // Message type routing (in _buildMessageContent) handles the dispatching
+    
+    // Normal text message
     return SelectableText(
       widget.message.message,
       style: TextStyle(color: textColor, fontSize: 16),
@@ -803,6 +818,43 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  Widget _buildPaymentRequestMessage() {
+    if (widget.currentUserId == null) {
+      return Text('Payment Request', style: TextStyle(color: Colors.grey));
+    }
+
+    final amount = widget.message.paymentAmount ?? 0.0;
+    final note = widget.message.paymentNote;
+    final toUsers = widget.message.payToUserIds ?? [];
+    final paymentStatus = widget.message.paymentStatus ?? {};
+    final senderPhone = widget.message.payToPhoneNumber;
+    final senderUpiId = widget.message.paymentUpiId;
+    final requestId = widget.message.paymentRequestId ?? widget.message.id;
+    
+    // Determine chat ID (works for both group and individual chats)
+    final chatId = widget.message.extraData['chatId']?.toString() ?? 
+        (widget.isGroup ? widget.message.receiverId : 
+        'chat_${widget.message.senderId}_${widget.currentUserId}');
+
+    return PaymentRequestCard(
+      messageId: widget.message.id,
+      chatId: chatId,
+      requestId: requestId,
+      amount: amount,
+      note: note,
+      senderName: widget.message.senderName,
+      senderId: widget.message.senderId,
+      senderUpiId: senderUpiId,
+      senderPhone: senderPhone,
+      paymentStatus: paymentStatus,
+      toUsers: toUsers,
+      memberNames: widget.memberNames,
+      currentUserId: widget.currentUserId!,
+      isGroupChat: widget.isGroup,
+      isCompleted: widget.message.isPaymentCompleted,
+    );
   }
 }
 

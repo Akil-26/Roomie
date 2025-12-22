@@ -87,53 +87,32 @@ class _MessagesPageState extends State<MessagesPage> {
     return Scaffold(
       backgroundColor: colorScheme.surface,
       resizeToAvoidBottomInset: false,
+      appBar: AppBar(
+        backgroundColor: colorScheme.surface,
+        elevation: 1,
+        automaticallyImplyLeading: false,
+        title: Text(
+          'Messages',
+          style: textTheme.headlineSmall?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
       body: Column(
         children: [
-          // Header with title
-          Container(
-            color: colorScheme.surface,
-            child: SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: screenWidth * 0.04,  // 4% of screen width
-                  right: 0.0,
-                  top: screenHeight * 0.012,  // 1.2% of screen height
-                  bottom: 0,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Messages',
-                        style: textTheme.headlineSmall?.copyWith(
-                          color: colorScheme.onSurface,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Search bar and Filter tabs on same row
+          // Top Row: Search bar + Filter tabs (matching search page structure)
           Container(
             color: Colors.transparent,
-            padding: EdgeInsets.fromLTRB(
-              screenWidth * 0.028,
-              screenHeight * 0.015,
-              screenWidth * 0.028,
-              screenHeight * 0.01,
-            ),
+            padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.028, vertical: 0),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Search bar (left side)
+                // Search bar
                 Expanded(
                   flex: 1,
                   child: Container(
-                    height: screenHeight * 0.055,  // 5.5% of screen height
+                    height: screenHeight * 0.055,
                     decoration: BoxDecoration(
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(screenHeight * 0.0275),
@@ -148,7 +127,7 @@ class _MessagesPageState extends State<MessagesPage> {
                       textAlignVertical: TextAlignVertical.center,
                       style: textTheme.bodyMedium,
                       decoration: InputDecoration(
-                        hintText: 'Search here',
+                        hintText: 'Search messages',
                         prefixIcon: Icon(
                           Icons.search,
                           color: colorScheme.onSurfaceVariant,

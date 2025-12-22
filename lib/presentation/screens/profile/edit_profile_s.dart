@@ -33,6 +33,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _phoneController;
   late TextEditingController _occupationController;
   late TextEditingController _ageController;
+  late TextEditingController _upiIdController;
 
   File? _selectedImage;
   XFile? _selectedXFile; // For web compatibility
@@ -65,6 +66,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _ageController = TextEditingController(
       text: widget.currentUser.age?.toString() ?? '',
     );
+    _upiIdController = TextEditingController(
+      text: widget.currentUser.upiId ?? '',
+    );
     _currentProfileImageUrl = widget.currentUser.profileImageUrl;
     _emailVerified = FirebaseAuth.instance.currentUser?.emailVerified ?? false;
 
@@ -96,6 +100,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _phoneController.dispose();
     _occupationController.dispose();
     _ageController.dispose();
+    _upiIdController.dispose();
     super.dispose();
   }
 
@@ -174,6 +179,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ? null
                 : _occupationController.text.trim(),
         age: age,
+        upiId: _upiIdController.text.trim().isEmpty
+                ? null
+                : _upiIdController.text.trim(),
       );
 
       if (mounted) {
@@ -200,10 +208,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       print('Error updating profile: $e'); // Add debugging
       if (mounted) {
+        final errorScheme = Theme.of(context).colorScheme;
+        String errorMessage = 'Error updating profile: $e';
+        
+        // 🔒 Show specific error for email conflict
+        if (e.toString().contains('email already exists')) {
+          errorMessage = '❌ This email already exists in Roomie. Please use a different email.';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating profile: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
+            content: Text(errorMessage),
+            backgroundColor: errorScheme.error,
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -1059,6 +1077,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       hint: 'Enter your phone number',
                       icon: Icons.phone_outlined,
                       keyboardType: TextInputType.phone,
+                    ),
+
+                    SizedBox(height: screenHeight * 0.015),
+                    _buildTextField(
+                      controller: _upiIdController,
+                      label: 'UPI ID (Optional)',
+                      hint: 'username@bank (e.g., akil@ybl)',
+                      icon: Icons.payment,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          if (!value.contains('@')) {
+                            return 'Enter valid UPI ID (username@bank)';
+                          }
+                          // Check for valid format: something@something
+                          final parts = value.split('@');
+                          if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) {
+                            return 'Invalid UPI ID format';
+                          }
+                        }
+                        return null;
+                      },
                     ),
 
                     SizedBox(height: screenHeight * 0.015),

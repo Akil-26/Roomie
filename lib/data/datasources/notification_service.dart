@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:roomie/data/models/notification_model.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 
@@ -12,6 +14,14 @@ class NotificationService {
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+  
+  GlobalKey<NavigatorState>? _navigatorKey;
+  
+  void setNavigatorKey(GlobalKey<NavigatorState> key) {
+    _navigatorKey = key;
+  }
 
   CollectionReference<Map<String, dynamic>> _userNotificationsRef(
     String userId,
@@ -25,6 +35,19 @@ class NotificationService {
   // Initialize notifications
   Future<void> initialize() async {
     try {
+      // Initialize flutter_local_notifications (Android only for now)
+      if (!kIsWeb) {
+        const androidSettings =
+            AndroidInitializationSettings('@mipmap/ic_launcher');
+        const initSettings = InitializationSettings(android: androidSettings);
+
+        await _localNotifications.initialize(
+          initSettings,
+          onDidReceiveNotificationResponse: _onTapNotification,
+        );
+        print('✅ Local notifications initialized');
+      }
+
       // Request permission
       NotificationSettings settings = await _fcm.requestPermission(
         alert: true,
@@ -60,10 +83,10 @@ class NotificationService {
         // Listen for token refresh
         _fcm.onTokenRefresh.listen(_saveFCMToken);
 
-        // Handle foreground messages
-        FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+        // Handle foreground messages with local notification
+        FirebaseMessaging.onMessage.listen(_showForegroundNotification);
 
-        // Handle notification taps
+        // Handle notification taps (background/killed app)
         FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
       }
     } catch (e) {
@@ -91,16 +114,73 @@ class NotificationService {
     }
   }
 
-  // Handle foreground messages
-  void _handleForegroundMessage(RemoteMessage message) {
+  // Handle foreground messages with local notification display
+  Future<void> _showForegroundNotification(RemoteMessage message) async {
     print('📨 Received foreground message: ${message.notification?.title}');
-    // You can show a local notification here if needed
+    
+    if (kIsWeb) return; // Skip on web
+
+    const androidDetails = AndroidNotificationDetails(
+      'high_importance_channel',
+      'High Importance Notifications',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    const details = NotificationDetails(android: androidDetails);
+
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      message.notification?.title,
+      message.notification?.body,
+      details,
+      payload: message.data['route'], // Deep link route (e.g., "/chats/{chatId}")
+    );
   }
 
-  // Handle notification tap
+  // Handle notification tap (local notification tap)
+  void _onTapNotification(NotificationResponse response) {
+    final route = response.payload;
+    if (route != null) {
+      print('🔔 Notification tapped → $route');
+      _navigateToRoute(route);
+    }
+  }
+
+  // Handle notification tap from background/killed app
   void _handleNotificationTap(RemoteMessage message) {
-    print('🔔 Notification tapped: ${message.data}');
-    // Navigate to a specific screen based on notification data
+    print('🔔 Notification tapped (background/killed): ${message.data}');
+    final route = message.data['route'];
+    if (route != null) {
+      print('📍 Should navigate to: $route');
+      _navigateToRoute(route);
+    }
+  }
+  
+  // Navigate to route from notification
+  void _navigateToRoute(String route) {
+    if (_navigatorKey?.currentContext == null) {
+      print('⚠️ Navigator not ready, skipping navigation');
+      return;
+    }
+    
+    try {
+      // Parse route: /chat/{chatId} or /expenses/{expenseId}
+      if (route.startsWith('/chat/')) {
+        final chatId = route.replaceFirst('/chat/', '');
+        print('📍 Navigating to chat: $chatId');
+        _navigatorKey!.currentState?.pushNamed(route);
+      } else if (route.startsWith('/expenses/')) {
+        final expenseId = route.replaceFirst('/expenses/', '');
+        print('📍 Navigating to expense: $expenseId');
+        // Expense detail screen navigation will be added in Phase 2
+        print('⚠️ Expense detail screen not yet implemented');
+      } else {
+        print('⚠️ Unknown route format: $route');
+      }
+    } catch (e) {
+      print('❌ Navigation error: $e');
+    }
   }
 
   // Send notification to a specific user

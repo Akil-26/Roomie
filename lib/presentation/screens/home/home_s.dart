@@ -151,9 +151,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNotificationIconShell({int unreadCount = 0}) {
     final colorScheme = Theme.of(context).colorScheme;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
     return SizedBox(
-      width: 36,
-      height: 36,
+      width: screenHeight * 0.055,
+      height: screenHeight * 0.055,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -188,6 +190,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNotificationIcon() {
     final colorScheme = Theme.of(context).colorScheme;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
     return Container(
       decoration: BoxDecoration(
         color: colorScheme.surface.withValues(alpha: 0),
@@ -205,7 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: Icon(
           Icons.notifications_none,
           color: colorScheme.onSurface,
-          size: 24,
+          size: screenHeight * 0.025,
         ),
         padding: EdgeInsets.zero,
       ),
@@ -434,99 +438,77 @@ class _HomeScreenState extends State<HomeScreen> {
     
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      body: Column(
-        children: [
-          // Custom App Bar
-          Container(
-            color: colorScheme.surface,
-            child: SafeArea(
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: screenWidth * 0.04,  // 4% of screen width
-                  vertical: screenHeight * 0.01,   // 1% of screen height
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Home',
-                      style:
-                          textTheme.headlineSmall?.copyWith(
-                            color: colorScheme.onSurface,
-                            fontWeight: FontWeight.bold,
-                          ) ??
-                          TextStyle(
-                            color: colorScheme.onSurface,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    Row(
-                      children: [
-                        // Notifications button with badge
-                        _buildNotificationButton(),
-                        const SizedBox(width: 6),
-                        // Profile button
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: colorScheme.surface.withValues(alpha: 0),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: IconButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder:
-                                      (context) => const UserProfileScreen(),
-                                ),
-                              );
-                            },
-                            icon: Icon(
-                              Icons.person_outline,
-                              color: colorScheme.onSurface,
-                              size: 24,
-                            ),
-                            padding: EdgeInsets.zero,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        // Add button - Only show if user can create (no current group)
-                        if (_canUserCreateGroup)
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: colorScheme.surface.withValues(alpha: 0),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: IconButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (context) => const CreateGroupScreen(),
-                                  ),
-                                ).then((_) => _loadUserGroupData());
-                              },
-                              icon: Icon(
-                                Icons.add,
-                                color: colorScheme.onSurface,
-                                size: 24,
-                              ),
-                              padding: EdgeInsets.zero,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
+      appBar: AppBar(
+        backgroundColor: colorScheme.surface,
+        elevation: 1,
+        automaticallyImplyLeading: false,
+        titleSpacing: screenWidth * 0.04,
+        title: Text(
+          'Home',
+          style:
+              textTheme.headlineSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
+              ) ??
+              TextStyle(
+                color: colorScheme.onSurface,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
               ),
+        ),
+        actions: [
+          // Notifications button with badge
+          _buildNotificationButton(),
+          SizedBox(width: screenWidth * 0.02),
+          // Profile button
+          SizedBox(
+            height: screenHeight * 0.055,
+            width: screenHeight * 0.055,
+            child: IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserProfileScreen(),
+                  ),
+                );
+              },
+              icon: Icon(
+                Icons.person_outline,
+                color: colorScheme.onSurface,
+                size: screenHeight * 0.025,
+              ),
+              padding: EdgeInsets.zero,
             ),
           ),
+          SizedBox(width: screenWidth * 0.02),
+          // Add button - Only show if user can create
+          if (_canUserCreateGroup)
+            SizedBox(
+              height: screenHeight * 0.055,
+              width: screenHeight * 0.055,
+              child: IconButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CreateGroupScreen(),
+                    ),
+                  ).then((_) => _loadUserGroupData());
+                },
+                icon: Icon(
+                  Icons.add,
+                  color: colorScheme.onSurface,
+                  size: screenHeight * 0.025,
+                ),
+                padding: EdgeInsets.zero,
+              ),
+            ),
+          SizedBox(width: screenWidth * 0.028),
+        ],
+      ),
+      body: Column(
+        children: [
           // Content
           Expanded(
             child: RefreshIndicator(
@@ -553,7 +535,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         Padding(
                           padding: EdgeInsets.fromLTRB(
                             screenWidth * 0.04,   // left: 4%
-                            screenHeight * 0.005, // top: 0.5% (very small)
+                            0,                    // top: 0% (moved up)
                             screenWidth * 0.04,   // right: 4%
                             screenHeight * 0.005, // bottom: 0.5%
                           ),
@@ -649,7 +631,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: screenWidth * 0.04,  // 4% horizontal gap (same as before)
-        vertical: screenHeight * 0.01,   // 1% vertical gap
+        vertical: screenHeight * 0.005,  // 0.5% vertical gap (moved up)
       ),
       child: GestureDetector(
         onTap: _navigateToGroupDetails,

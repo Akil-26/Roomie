@@ -11,6 +11,7 @@ analyzer:
   errors:
     unused_element: ignore
     deprecated_member_use: ignore
+    use_super_parameters: ignore
 include: package:flutter_lints/flutter.yaml
 
 linter:

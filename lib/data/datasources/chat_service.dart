@@ -115,6 +115,13 @@ class ChatService {
     TodoData? todo,
     Map<String, dynamic>? extraData,
     bool isSystemMessage = false,
+    String? paymentRequestId,
+    double? paymentAmount,
+    List<String>? payToUserIds,
+    String? paymentNote,
+    String? paymentUpiId,
+    String? payToPhoneNumber,
+    Map<String, String>? paymentStatus,
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -173,6 +180,13 @@ class ChatService {
         todo: todo,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
+        paymentRequestId: paymentRequestId,
+        paymentAmount: paymentAmount,
+        payToUserIds: payToUserIds,
+        paymentNote: paymentNote,
+        paymentUpiId: paymentUpiId,
+        payToPhoneNumber: payToPhoneNumber,
+        paymentStatus: paymentStatus,
         seenBy:
             isSystemMessage || currentUser == null
                 ? {}
@@ -457,6 +471,13 @@ class ChatService {
     PollData? poll,
     TodoData? todo,
     Map<String, dynamic>? extraData,
+    String? paymentRequestId,
+    double? paymentAmount,
+    List<String>? payToUserIds,
+    String? paymentNote,
+    String? paymentUpiId,
+    String? payToPhoneNumber,
+    Map<String, String>? paymentStatus,
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -491,6 +512,13 @@ class ChatService {
         todo: todo,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
+        paymentRequestId: paymentRequestId,
+        paymentAmount: paymentAmount,
+        payToUserIds: payToUserIds,
+        paymentNote: paymentNote,
+        paymentUpiId: paymentUpiId,
+        payToPhoneNumber: payToPhoneNumber,
+        paymentStatus: paymentStatus,
         seenBy:
             isSystemMessage || currentUser == null
                 ? {}
@@ -828,5 +856,71 @@ class ChatService {
       debugPrint('Error searching users: $e');
       return [];
     }
+  }
+
+  /// Update payment status for a specific user in a payment request message
+  Future<void> updateMessagePaymentStatus({
+    required String chatId,
+    required String messageId,
+    required String userId,
+    required String status, // "PAID" or "PENDING"
+    required bool isGroupChat,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) throw Exception('User not authenticated');
+
+      final path = isGroupChat
+          ? 'groupChats/$chatId/messages/$messageId'
+          : 'chats/$chatId/messages/$messageId';
+
+      final messageRef = _database.ref(path);
+      final snapshot = await messageRef.get();
+      
+      if (!snapshot.exists) {
+        throw Exception('Message not found');
+      }
+
+      final rawData = Map<String, dynamic>.from(snapshot.value as Map);
+      final paymentStatus = Map<String, String>.from(
+        rawData['paymentStatus'] as Map? ?? {},
+      );
+
+      // Update status for this user
+      paymentStatus[userId] = status;
+
+      // Check if all users have paid
+      final allPaid = _checkAllUsersPaid(paymentStatus);
+
+      // Update both status and completion flag
+      final updates = <String, dynamic>{
+        'paymentStatus': paymentStatus,
+        'isPaymentCompleted': allPaid,
+      };
+
+      await messageRef.update(updates);
+
+      if (allPaid) {
+        debugPrint('🎉 Payment request completed! All users paid.');
+      } else {
+        debugPrint('✅ Updated payment status: $userId -> $status');
+      }
+    } catch (e) {
+      debugPrint('❌ Error updating payment status: $e');
+      rethrow;
+    }
+  }
+
+  /// Check if all users in the payment request have paid
+  bool _checkAllUsersPaid(Map<String, String> paymentStatus) {
+    if (paymentStatus.isEmpty) return false;
+    
+    for (final status in paymentStatus.values) {
+      if (status != 'PAID') {
+        return false;
+      }
+    }
+    
+    return true;
   }
 }

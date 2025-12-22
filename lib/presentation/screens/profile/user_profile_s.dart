@@ -46,6 +46,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           print(
             'Profile: User data loaded: ${userData['profileImageUrl']}',
           ); // Debug log
+          
+          // 🔒 SECURITY: Session protection - verify UID matches
+          // This prevents accidental account switching
+          final currentAuthUid = _authService.currentUser?.uid;
+          if (currentAuthUid != null && currentAuthUid != user.uid) {
+            print('⚠️ Security: UID mismatch detected! Force logging out...');
+            await _authService.signOut();
+            if (mounted) {
+              Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+            }
+            return;
+          }
+          
           setState(() {
             _currentUser = UserModel.fromMap(userData, user.uid);
             _isLoading = false;

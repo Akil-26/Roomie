@@ -4,10 +4,12 @@ class UserModel {
   final String? name;
   final String? username;
   final String? phone;
+  final bool isPhoneVerified;
   final String? bio;
   final String? profileImageUrl;
   final String? occupation;
   final int? age;
+  final String? upiId; // UPI ID in format: username@bank
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -17,10 +19,12 @@ class UserModel {
     this.name,
     this.username,
     this.phone,
+    this.isPhoneVerified = false,
     this.bio,
     this.profileImageUrl,
     this.occupation,
     this.age,
+    this.upiId,
     this.createdAt,
     this.updatedAt,
   });
@@ -32,10 +36,12 @@ class UserModel {
       name: map['name'],
       username: map['username'],
       phone: map['phone'],
+      isPhoneVerified: map['isPhoneVerified'] ?? false,
       bio: map['bio'],
       profileImageUrl: map['profileImageUrl'],
       occupation: map['occupation'],
       age: map['age'],
+      upiId: map['upiId'],
       createdAt: map['createdAt']?.toDate(),
       updatedAt: map['updatedAt']?.toDate(),
     );
@@ -47,10 +53,12 @@ class UserModel {
       'name': name,
       'username': username,
       'phone': phone,
+      'isPhoneVerified': isPhoneVerified,
       'bio': bio,
       'profileImageUrl': profileImageUrl,
       'occupation': occupation,
       'age': age,
+      'upiId': upiId,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
     };
@@ -73,10 +81,12 @@ class UserModel {
     String? name,
     String? username,
     String? phone,
+    bool? isPhoneVerified,
     String? bio,
     String? profileImageUrl,
     String? occupation,
     int? age,
+    String? upiId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -86,10 +96,12 @@ class UserModel {
       name: name ?? this.name,
       username: username ?? this.username,
       phone: phone ?? this.phone,
+      isPhoneVerified: isPhoneVerified ?? this.isPhoneVerified,
       bio: bio ?? this.bio,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       occupation: occupation ?? this.occupation,
       age: age ?? this.age,
+      upiId: upiId ?? this.upiId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

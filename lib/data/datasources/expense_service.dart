@@ -304,4 +304,100 @@ class ExpenseService {
       };
     }
   }
+
+  // Create expense from chat payment request
+  Future<String?> createExpenseFromPayment({
+    required String chatId,
+    required String messageId,
+    required double amount,
+    String? description,
+    required String payerId,
+    required String payeeId,
+    required String payeeName,
+    bool isGroupPayment = false,
+    List<String>? otherParticipants,
+  }) async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) throw Exception('User not authenticated');
+
+      // Determine title
+      final title = description ?? 'Roomie Chat Payment';
+      
+      // Participants: payer(s) + payee
+      List<String> participants = [payeeId];
+      if (isGroupPayment && otherParticipants != null) {
+        participants.addAll(otherParticipants);
+      } else {
+        participants.add(payerId);
+      }
+      participants = participants.toSet().toList(); // Remove duplicates
+
+      // Split amounts: only payer(s) owe money
+      Map<String, double> splitAmounts = {};
+      Map<String, bool> paymentStatus = {};
+      
+      if (isGroupPayment && otherParticipants != null && otherParticipants.isNotEmpty) {
+        // Split among multiple payers
+        final amountPerPerson = amount / otherParticipants.length;
+        for (final participantId in otherParticipants) {
+          splitAmounts[participantId] = amountPerPerson;
+          paymentStatus[participantId] = false; // Not paid yet
+        }
+      } else {
+        // Single payer
+        splitAmounts[payerId] = amount;
+        paymentStatus[payerId] = false;
+      }
+
+      // Create expense with metadata linking to chat
+      final expense = ExpenseModel(
+        id: '',
+        title: title,
+        description: 'Payment request from chat',
+        amount: amount,
+        type: ExpenseType.other,
+        status: ExpenseStatus.pending,
+        groupId: chatId, // Use chatId as groupId
+        createdBy: payeeId,
+        createdByName: payeeName,
+        participants: participants,
+        splitAmounts: splitAmounts,
+        paymentStatus: paymentStatus,
+        createdAt: DateTime.now(),
+        metadata: {
+          'source': 'chat_payment',
+          'chatId': chatId,
+          'messageId': messageId,
+          'isGroupPayment': isGroupPayment,
+        },
+      );
+
+      final docRef = await _firestore
+          .collection(_collection)
+          .add(expense.toFirestore());
+      
+      print('✅ Expense created from payment: ${docRef.id}');
+      return docRef.id;
+    } catch (e) {
+      print('❌ Error creating expense from payment: $e');
+      rethrow;
+    }
+  }
+
+  // Get expenses created from chat payments (for Roomie Expense tab)
+  Stream<List<ExpenseModel>> getChatPaymentExpenses(String userId) {
+    return _firestore
+        .collection(_collection)
+        .where('participants', arrayContains: userId)
+        .where('metadata.source', isEqualTo: 'chat_payment')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map((doc) => ExpenseModel.fromFirestore(doc))
+                  .toList(),
+        );
+  }
 }

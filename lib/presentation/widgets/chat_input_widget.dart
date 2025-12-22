@@ -17,6 +17,7 @@ class ChatInputWidget extends StatefulWidget {
   final Function(File, int)? onVoiceRecorded;
   final Function()? onPollPressed;
   final Function()? onTodoPressed;
+  final Function()? onPaymentPressed;
   final bool isUploading;
   final bool isGroup;
 
@@ -31,6 +32,7 @@ class ChatInputWidget extends StatefulWidget {
     this.onVoiceRecorded,
     this.onPollPressed,
     this.onTodoPressed,
+    this.onPaymentPressed,
     this.isUploading = false,
     this.isGroup = false,
   });
@@ -323,6 +325,14 @@ class _ChatInputWidgetState extends State<ChatInputWidget>
                         label: 'To-Do',
                         onTap: () {
                           widget.onTodoPressed?.call();
+                          _toggleAttachmentMenu();
+                        },
+                      ),
+                      _AttachmentButton(
+                        icon: Icons.payment_outlined,
+                        label: 'Payment',
+                        onTap: () {
+                          widget.onPaymentPressed?.call();
                           _toggleAttachmentMenu();
                         },
                       ),

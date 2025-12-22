@@ -18,7 +18,7 @@ List<dynamic> _safeListFromMap(dynamic value) {
   return [];
 }
 
-enum MessageType { text, image, file, audio, voice, poll, todo, system }
+enum MessageType { text, image, file, audio, voice, poll, todo, system, paymentRequest }
 
 enum MessageStatus { sending, sent, delivered, read }
 
@@ -290,6 +290,16 @@ class MessageModel {
   final TodoData? todo;
   final Map<String, dynamic> extraData;
   final bool isSystemMessage;
+  
+  // Payment request fields (new schema matching requirements)
+  final String? paymentRequestId; // Unique ID for payment request
+  final double? paymentAmount;
+  final List<String>? payToUserIds; // Users who need to pay
+  final String? paymentNote;
+  final String? paymentUpiId; // UPI ID of sender for payment
+  final String? payToPhoneNumber; // Phone number for UPI payment
+  final Map<String, String>? paymentStatus; // userId -> "PAID" or "PENDING"
+  final bool isPaymentCompleted; // True when all users have paid
 
   const MessageModel({
     required this.id,
@@ -310,6 +320,14 @@ class MessageModel {
     this.todo,
     this.extraData = const {},
     this.isSystemMessage = false,
+    this.paymentRequestId,
+    this.paymentAmount,
+    this.payToUserIds,
+    this.paymentNote,
+    this.paymentUpiId,
+    this.payToPhoneNumber,
+    this.paymentStatus,
+    this.isPaymentCompleted = false,
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> map, String id) {
@@ -374,6 +392,20 @@ class MessageModel {
       isSystemMessage:
           map['isSystemMessage'] == true ||
           typeString == MessageType.system.name,
+      paymentRequestId: map['paymentRequestId']?.toString(),
+      paymentAmount: map['paymentAmount'] != null
+          ? (map['paymentAmount'] as num).toDouble()
+          : null,
+      payToUserIds: map['payToUserIds'] != null
+          ? List<String>.from(map['payToUserIds'] as List)
+          : null,
+      paymentNote: map['paymentNote']?.toString(),
+      paymentUpiId: map['paymentUpiId']?.toString(),
+      payToPhoneNumber: map['payToPhoneNumber']?.toString(),
+      paymentStatus: map['paymentStatus'] != null
+          ? Map<String, String>.from(map['paymentStatus'] as Map)
+          : null,
+      isPaymentCompleted: map['isPaymentCompleted'] == true,
     );
   }
 
@@ -402,6 +434,14 @@ class MessageModel {
       if (todo != null) 'todo': todo!.toMap(),
       if (extraData.isNotEmpty) 'extraData': extraData,
       'isSystemMessage': isSystemMessage,
+      if (paymentRequestId != null) 'paymentRequestId': paymentRequestId,
+      if (paymentAmount != null) 'paymentAmount': paymentAmount,
+      if (payToUserIds != null) 'payToUserIds': payToUserIds,
+      if (paymentNote != null) 'paymentNote': paymentNote,
+      if (paymentUpiId != null) 'paymentUpiId': paymentUpiId,
+      if (payToPhoneNumber != null) 'payToPhoneNumber': payToPhoneNumber,
+      if (paymentStatus != null) 'paymentStatus': paymentStatus,
+      'isPaymentCompleted': isPaymentCompleted,
     };
   }
 
@@ -424,6 +464,14 @@ class MessageModel {
     TodoData? todo,
     Map<String, dynamic>? extraData,
     bool? isSystemMessage,
+    String? paymentRequestId,
+    double? paymentAmount,
+    List<String>? payToUserIds,
+    String? paymentNote,
+    String? paymentUpiId,
+    String? payToPhoneNumber,
+    Map<String, String>? paymentStatus,
+    bool? isPaymentCompleted,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -444,6 +492,14 @@ class MessageModel {
       todo: todo ?? this.todo,
       extraData: extraData ?? this.extraData,
       isSystemMessage: isSystemMessage ?? this.isSystemMessage,
+      paymentRequestId: paymentRequestId ?? this.paymentRequestId,
+      paymentAmount: paymentAmount ?? this.paymentAmount,
+      payToUserIds: payToUserIds ?? this.payToUserIds,
+      paymentNote: paymentNote ?? this.paymentNote,
+      paymentUpiId: paymentUpiId ?? this.paymentUpiId,
+      payToPhoneNumber: payToPhoneNumber ?? this.payToPhoneNumber,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      isPaymentCompleted: isPaymentCompleted ?? this.isPaymentCompleted,
     );
   }
 
@@ -462,6 +518,10 @@ class MessageModel {
         return poll != null ? 'Poll: ${poll!.question}' : 'Poll';
       case MessageType.todo:
         return todo != null ? 'To-do: ${todo!.title}' : 'To-do list';
+      case MessageType.paymentRequest:
+        return paymentAmount != null 
+            ? 'Payment request: ₹${paymentAmount!.toStringAsFixed(2)}'
+            : 'Payment request';
       case MessageType.system:
         return message;
       case MessageType.text:

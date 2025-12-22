@@ -10,7 +10,20 @@ service cloud.firestore {
     // Readable by authenticated users (to show names/avatars), writable only by the owner
     match /users/{userId} {
       allow read: if request.auth != null; // profiles are visible to signed-in users
-      allow write: if request.auth != null && request.auth.uid == userId;
+      
+      // 🔒 SECURITY: Only owner can write, and email must be unique or unchanged
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      allow update: if request.auth != null 
+        && request.auth.uid == userId
+        && (
+          // Email unchanged OR new email is unique
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['email'])
+          || !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        );
+      
+      // 🔒 No client-side deletion
+      allow delete: if false;
 
       // Subcollections: followers/following
       match /following/{targetUserId} {
@@ -86,6 +99,89 @@ service cloud.firestore {
     // Per-user notifications top-level collection (if used):
     match /users/{userId}/notifications/{notificationId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 💬 CHAT MESSAGES (Direct & Group)
+    match /chats/{chatId}/messages/{messageId} {
+      // Only participants can read messages
+      allow read: if request.auth != null;
+      
+      // Only authenticated users can create messages
+      allow create: if request.auth != null 
+        && request.resource.data.senderId == request.auth.uid;
+      
+      // 🔒 Only sender can update (for edit/delete)
+      // For payment requests: only toUsers can update payment status
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.senderId
+        || (resource.data.type == 'paymentRequest' 
+            && request.auth.uid in resource.data.payToUserIds)
+      );
+      
+      allow delete: if request.auth != null 
+        && request.auth.uid == resource.data.senderId;
+    }
+
+    // Group messages
+    match /groups/{groupId}/messages/{messageId} {
+      // Only group members can read
+      allow read: if request.auth != null 
+        && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+      
+      // Only group members can create messages
+      allow create: if request.auth != null 
+        && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members
+        && request.resource.data.senderId == request.auth.uid;
+      
+      // 🔒 Only sender can update/delete (or toUsers for payment status)
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.senderId
+        || (resource.data.type == 'paymentRequest' 
+            && request.auth.uid in resource.data.payToUserIds)
+      );
+      
+      allow delete: if request.auth != null 
+        && request.auth.uid == resource.data.senderId;
+    }
+
+    // 💰 PAYMENT REQUESTS
+    match /payment_requests/{requestId} {
+      // Anyone can read their own payment requests
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.requestedBy
+        || request.auth.uid in resource.data.targetUsers
+      );
+      
+      // Only authenticated users can create payment requests
+      allow create: if request.auth != null 
+        && request.resource.data.requestedBy == request.auth.uid;
+      
+      // 🔒 Only targetUsers can update their payment status
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.requestedBy
+        || request.auth.uid in resource.data.targetUsers
+      );
+      
+      // Only requester can delete
+      allow delete: if request.auth != null 
+        && request.auth.uid == resource.data.requestedBy;
+    }
+
+    // 💸 EXPENSES
+    match /expenses/{expenseId} {
+      // Group members can read group expenses
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.paidBy
+        || request.auth.uid in resource.data.participants
+      );
+      
+      // Anyone can create expense if they're the payer
+      allow create: if request.auth != null 
+        && request.resource.data.paidBy == request.auth.uid;
+      
+      // Only payer can update/delete
+      allow update, delete: if request.auth != null 
+        && request.auth.uid == resource.data.paidBy;
     }
   }
 }

@@ -49,6 +49,7 @@ dependencies:
   timeago: ^3.4.0
   intl: ^0.20.2
   firebase_messaging: ^16.0.2
+  flutter_local_notifications: ^17.0.0
   google_generative_ai: ^0.4.6
   lottie: ^3.1.2
   google_maps_flutter: ^2.7.0
@@ -72,6 +73,7 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   flutter_secure_storage: ^9.2.2
+  android_intent_plus: ^5.1.0  # For UPI payment integration
 
 dev_dependencies:
   flutter_test:

@@ -1,34 +1,23 @@
 plugins {
-    // Requires running Gradle with JDK 17+ (set JAVA_HOME or org.gradle.java.home=... in gradle.properties)
     id("com.android.application")
-    id("com.google.gms.google-services") // FlutterFire
-    id("org.jetbrains.kotlin.android")
-    id("dev.flutter.flutter-gradle-plugin") // Must stay last
-}
-
-import java.util.Properties
-import java.io.FileInputStream
-
-// Read API key from .env file
-val localProperties = Properties()
-val localPropertiesFile = rootProject.file("../.env")
-if (localPropertiesFile.exists()) {
-    localProperties.load(FileInputStream(localPropertiesFile))
+    id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 
 android {
     namespace = "com.example.roomie"
-    compileSdk = 36
-    ndkVersion = "27.0.12077973"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
@@ -40,34 +29,13 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        // Make the API key available to the app
-        resValue("string", "google_maps_api_key_from_env", localProperties.getProperty("GOOGLE_MAPS_API_KEY_ANDROID") ?: "YOUR_API_KEY_HERE")
     }
 
-    // Signing configs commented out for development
-    // signingConfigs {
-    //     create("release") {
-    //         storeFile = file("release-keystore.jks")
-    //         storePassword = "Akil_1265"
-    //         keyAlias = "release"
-    //         keyPassword = "Akil_1265"
-    //     }
-    // }
-
     buildTypes {
-        debug {
-            // Debug builds use default debug keystore
-        }
         release {
-            // signingConfig = signingConfigs.getByName("release")
-            // Using default keystore for now
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // TODO: Add your own signing config for the release build.
+            // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
@@ -75,6 +43,7 @@ android {
 flutter {
     source = "../.."
 }
+
 
 dependencies {
     implementation(platform("com.google.firebase:firebase-bom:32.2.0"))

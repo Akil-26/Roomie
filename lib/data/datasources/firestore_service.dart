@@ -55,8 +55,24 @@ class FirestoreService {
     dynamic profileImage, // Can be File, XFile, or null
     String? occupation,
     int? age,
+    String? upiId, // UPI ID in format: username@bank
   }) async {
     final docRef = _firestore.collection('users').doc(userId);
+
+    // 🔒 SECURITY: Check if email already exists for a different user
+    if (email.isNotEmpty) {
+      final emailQuery = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email.toLowerCase())
+          .get();
+
+      for (final doc in emailQuery.docs) {
+        // Allow user to keep their own email, but reject if it belongs to someone else
+        if (doc.id != userId) {
+          throw Exception('This email already exists in Roomie. Please use a different email.');
+        }
+      }
+    }
 
     // Get existing data to preserve profile image URL if no new image is provided
     final docSnapshot = await docRef.get();
@@ -101,6 +117,7 @@ class FirestoreService {
       'profileImageUrl': profileImageUrl, // Always include this field
       if (occupation != null) 'occupation': occupation,
       if (age != null) 'age': age,
+      if (upiId != null && upiId.isNotEmpty) 'upiId': upiId.trim().toLowerCase(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
@@ -111,6 +128,27 @@ class FirestoreService {
 
     await docRef.set(userData, SetOptions(merge: true));
     print('Profile data saved successfully'); // Debug log
+  }
+
+  /// 🔒 Check if email already exists for a different user
+  Future<bool> isEmailTaken(String email, String currentUserId) async {
+    try {
+      final emailQuery = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email.toLowerCase())
+          .get();
+
+      for (final doc in emailQuery.docs) {
+        // Email is taken if it belongs to a different user
+        if (doc.id != currentUserId) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      print('Error checking email: $e');
+      return false;
+    }
   }
 
   /// Fetch user details (optional utility)
