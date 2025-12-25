@@ -189,8 +189,12 @@ class SmsTransactionService {
       final category = _categorizeTransaction(merchantName, message);
 
       final uniquePart = _idSequence++;
+      // Create stable ID based on content (timestamp + amount + type + message hash)
+      // This prevents duplicates when syncing multiple times
+      final stableId = '${timestamp.millisecondsSinceEpoch}_${amount.toStringAsFixed(2)}_${type.name}_${_shortFingerprint(message)}';
+      
       final model = SmsTransactionModel(
-        id: '${timestamp.millisecondsSinceEpoch}_${uniquePart}_${sender}_${_shortFingerprint(message)}',
+        id: stableId,
         userId: userId,
         type: type,
         amount: amount,

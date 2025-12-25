@@ -84,7 +84,14 @@ class LocalSmsTransactionStore {
   }
 
   List<SmsTransactionModel> getUser(String userId) {
-    return _cache.where((t) => t.userId == userId).toList();
+    // Deduplicate by ID (in case of any duplicates)
+    final Map<String, SmsTransactionModel> uniqueMap = {};
+    for (final t in _cache.where((t) => t.userId == userId)) {
+      uniqueMap[t.id] = t;
+    }
+    final list = uniqueMap.values.toList();
+    list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return list;
   }
 
   Stream<List<SmsTransactionModel>> watchUser(String userId) {
@@ -93,6 +100,14 @@ class LocalSmsTransactionStore {
 
   bool get isEmpty => _cache.isEmpty;
   int get count => _cache.length;
+
+  /// Clear all stored transactions (useful for re-sync)
+  Future<void> clearAll() async {
+    if (_box == null) return;
+    await _box!.clear();
+    _cache.clear();
+    _controller.add(List.unmodifiable(_cache));
+  }
 
   List<SmsTransactionModel> getUserPaged(String userId, {required int offset, required int limit}) {
     final list = _cache.where((t) => t.userId == userId);

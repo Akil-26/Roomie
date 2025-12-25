@@ -35,18 +35,31 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> {
   void initState() {
     super.initState();
     _initializeScreen();
+    
+    // Safety timeout - stop loading after 10 seconds max
+    Future.delayed(const Duration(seconds: 10), () {
+      if (mounted && _isLoadingSms) {
+        debugPrint('⚠️ Loading timeout - forcing stop');
+        setState(() => _isLoadingSms = false);
+      }
+    });
   }
 
   Future<void> _initializeScreen() async {
-    await _loadPermissionStatus();
-    if (_hasSmsPermission) {
-      await _loadCurrentMonthSms();
-    } else if (!_permissionAskedBefore) {
-      // First time - ask permission
-      await _requestSmsPermission();
-    } else {
-      // Permission denied before, show permission screen
-      setState(() => _isLoadingSms = false);
+    try {
+      await _loadPermissionStatus();
+      if (_hasSmsPermission) {
+        await _loadCurrentMonthSms();
+      } else if (!_permissionAskedBefore) {
+        // First time - show permission screen (don't auto-open settings)
+        if (mounted) setState(() => _isLoadingSms = false);
+      } else {
+        // Permission denied before, show permission screen
+        if (mounted) setState(() => _isLoadingSms = false);
+      }
+    } catch (e) {
+      debugPrint('Error initializing expense screen: $e');
+      if (mounted) setState(() => _isLoadingSms = false);
     }
   }
 
@@ -70,21 +83,43 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> {
   }
 
   Future<void> _requestSmsPermission() async {
+    debugPrint('🔐 Requesting SMS permission...');
     await _savePermissionAsked();
     
-    // Open app settings for user to grant permission
-    await openAppSettings();
-    
-    // Check after user returns
-    Future.delayed(const Duration(milliseconds: 800), () async {
-      if (!mounted) return;
-      final hasPermission = await _smsService.hasSmsPermission();
-      setState(() => _hasSmsPermission = hasPermission);
+    // Request SMS permission directly
+    try {
+      final granted = await _smsService.requestSmsPermission();
+      debugPrint('🔐 Permission result: $granted');
       
-      if (hasPermission) {
-        await _syncAndLoadSms();
+      if (mounted) {
+        setState(() => _hasSmsPermission = granted);
+        
+        if (granted) {
+          await _syncAndLoadSms();
+        } else {
+          // Permission denied - show snackbar with option to open settings
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('SMS permission denied'),
+              action: SnackBarAction(
+                label: 'Settings',
+                onPressed: () async {
+                  final opened = await openAppSettings();
+                  debugPrint('Settings opened: $opened');
+                },
+              ),
+            ),
+          );
+        }
       }
-    });
+    } catch (e) {
+      debugPrint('🔐 Permission error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _syncAndLoadSms() async {
@@ -193,8 +228,8 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> {
       // Month key (e.g., "December 2025")
       final monthKey = DateFormat('MMMM yyyy').format(txn.timestamp);
       
-      // Date key (e.g., "25 Dec")
-      final dateKey = DateFormat('d MMM').format(txn.timestamp);
+      // Date key (e.g., "25 Dec, Thu")
+      final dateKey = DateFormat('d MMM, EEE').format(txn.timestamp);
       
       grouped.putIfAbsent(monthKey, () => {});
       grouped[monthKey]!.putIfAbsent(dateKey, () => []);
@@ -327,6 +362,47 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> {
               ),
             ),
           ),
+          // Summary Card - Always visible at top when permission granted
+          if (_hasSmsPermission && !_isLoadingSms)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [cs.primaryContainer, cs.secondaryContainer],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildSummaryItem(
+                      icon: Icons.trending_down,
+                      label: 'Spent',
+                      amount: _smsDebit,
+                      color: Colors.red,
+                      theme: theme,
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 40,
+                    color: cs.outline.withOpacity(0.3),
+                  ),
+                  Expanded(
+                    child: _buildSummaryItem(
+                      icon: Icons.trending_up,
+                      label: 'Received',
+                      amount: _smsCredit,
+                      color: Colors.green,
+                      theme: theme,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Content
           Expanded(
             child: _buildContent(theme, cs),
@@ -425,63 +501,16 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> {
   }
 
   Widget _buildTransactionsList(ThemeData theme, ColorScheme cs) {
-    return Column(
-      children: [
-        // Summary Card
-        Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [cs.primaryContainer, cs.secondaryContainer],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _buildSummaryItem(
-                  icon: Icons.arrow_upward,
-                  label: 'Spent',
-                  amount: _smsDebit,
-                  color: Colors.red,
-                  theme: theme,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: cs.outline.withOpacity(0.3),
-              ),
-              Expanded(
-                child: _buildSummaryItem(
-                  icon: Icons.arrow_downward,
-                  label: 'Received',
-                  amount: _smsCredit,
-                  color: Colors.green,
-                  theme: theme,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Transactions List
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _groupedTransactions[DateFormat('MMMM yyyy').format(_selectedMonth)]?.length ?? 0,
-            itemBuilder: (context, index) {
-              final monthData = _groupedTransactions[DateFormat('MMMM yyyy').format(_selectedMonth)]!;
-              final dateKey = monthData.keys.elementAt(index);
-              final transactions = monthData[dateKey]!;
-              
-              return _buildDateGroup(dateKey, transactions, theme, cs);
-            },
-          ),
-        ),
-      ],
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: _groupedTransactions[DateFormat('MMMM yyyy').format(_selectedMonth)]?.length ?? 0,
+      itemBuilder: (context, index) {
+        final monthData = _groupedTransactions[DateFormat('MMMM yyyy').format(_selectedMonth)]!;
+        final dateKey = monthData.keys.elementAt(index);
+        final transactions = monthData[dateKey]!;
+        
+        return _buildDateGroup(dateKey, transactions, theme, cs);
+      },
     );
   }
 
@@ -554,61 +583,186 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> {
     final isDebit = txn.type == TransactionType.debit;
     final color = isDebit ? Colors.red : Colors.green;
     
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: cs.outline.withOpacity(0.1),
+    return GestureDetector(
+      onTap: () => _showTransactionDetails(txn, theme, cs),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: cs.outline.withOpacity(0.1),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Icon - Trading style
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                isDebit ? Icons.trending_down : Icons.trending_up,
+                color: color,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    txn.merchantName ?? 'Transaction',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (txn.bankName != null)
+                    Text(
+                      txn.bankName!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // Amount
+            Text(
+              '${isDebit ? '-' : '+'}₹${txn.amount.toStringAsFixed(2)}',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, color: cs.onSurfaceVariant, size: 20),
+          ],
         ),
       ),
-      child: Row(
-        children: [
-          // Icon
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              isDebit ? Icons.arrow_upward : Icons.arrow_downward,
-              color: color,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  txn.merchantName ?? 'Transaction',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (txn.bankName != null)
-                  Text(
-                    txn.bankName!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
+    );
+  }
+
+  void _showTransactionDetails(
+    SmsTransactionModel txn,
+    ThemeData theme,
+    ColorScheme cs,
+  ) {
+    final isDebit = txn.type == TransactionType.debit;
+    final color = isDebit ? Colors.red : Colors.green;
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      isDebit ? Icons.trending_down : Icons.trending_up,
+                      color: color,
+                      size: 28,
                     ),
                   ),
-              ],
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isDebit ? 'Money Sent' : 'Money Received',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('EEEE, d MMMM yyyy • hh:mm a').format(txn.timestamp),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              
+              // Amount
+              Center(
+                child: Text(
+                  '${isDebit ? '-' : '+'}₹${txn.amount.toStringAsFixed(2)}',
+                  style: theme.textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Details
+              _buildDetailRow('Merchant', txn.merchantName ?? 'Unknown', theme, cs),
+              _buildDetailRow('Bank', txn.bankName ?? 'Unknown', theme, cs),
+              _buildDetailRow('Type', isDebit ? 'Debit (Spent)' : 'Credit (Received)', theme, cs),
+              _buildDetailRow('Date', DateFormat('d MMM yyyy').format(txn.timestamp), theme, cs),
+              _buildDetailRow('Time', DateFormat('hh:mm a').format(txn.timestamp), theme, cs),
+              
+              const SizedBox(height: 16),
+              
+              // Close button
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, ThemeData theme, ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant,
             ),
           ),
-          // Amount
           Text(
-            '${isDebit ? '-' : '+'}₹${txn.amount.toStringAsFixed(2)}',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: color,
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
