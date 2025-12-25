@@ -1,59 +1,67 @@
     plugins {
-        id 'com.android.application'
-        id 'kotlin-android'
-        id 'dev.flutter.flutter-gradle-plugin'
-        id 'com.google.gms.google-services'
+    id 'com.android.application'
+    id 'kotlin-android'
+    id 'dev.flutter.flutter-gradle-plugin'
+    id 'com.google.gms.google-services'
+}
+
+def envProperties = new Properties()
+def envPropertiesFile = rootProject.file('../.env')
+if (envPropertiesFile.exists()) {
+    envPropertiesFile.withReader('UTF-8') { reader ->
+        envProperties.load(reader)
+    }
+}
+
+android {
+    namespace "com.example.roomie"
+    compileSdk 36
+    ndkVersion "27.0.12077973"
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
     }
 
-    def envProperties = new Properties()
-    def envPropertiesFile = rootProject.file('../.env')
-    if (envPropertiesFile.exists()) {
-        envPropertiesFile.withReader('UTF-8') { reader ->
-            envProperties.load(reader)
-        }
+    kotlinOptions {
+        jvmTarget = '17'
     }
 
-    android {
-        namespace = "com.example.roomie"
-        compileSdk = 36
-        ndkVersion = "27.0.12077973"
+    defaultConfig {
+        applicationId "com.example.roomie"
+        minSdk flutter.minSdkVersion
+        targetSdk flutter.targetSdkVersion
+        versionCode flutter.versionCode
+        versionName flutter.versionName
 
-        compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_17
-            targetCompatibility = JavaVersion.VERSION_17
-        }
-
-        kotlinOptions {
-            jvmTarget = '17'
-        }
-
-        defaultConfig {
-            applicationId = "com.example.roomie"
-            minSdk = flutter.minSdkVersion
-            targetSdk = flutter.targetSdkVersion
-            versionCode = flutter.versionCode
-            versionName = flutter.versionName
-
-            resValue "string", "google_maps_api_key_from_env", envProperties.getProperty('GOOGLE_MAPS_API_KEY_ANDROID', 'YOUR_API_KEY_HERE')
-        }
-
-        buildTypes {
-            debug {
-                // Debug builds use default debug keystore
-            }
-            release {
-                minifyEnabled true
-                shrinkResources true
-                proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            }
-        }
+        resValue "string", "google_maps_api_key_from_env",
+                envProperties.getProperty(
+                        'GOOGLE_MAPS_API_KEY_ANDROID',
+                        'YOUR_API_KEY_HERE'
+                )
     }
 
-    flutter {
-        source = '../..'
+    buildTypes {
+        debug {
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile(
+                    'proguard-android-optimize.txt'
+            ), 'proguard-rules.pro'
+        }
     }
+}
 
-    dependencies {
-        implementation platform('com.google.firebase:firebase-bom:32.2.0')
-        implementation 'com.google.firebase:firebase-auth'
-    }
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:32.2.0')
+    implementation 'com.google.firebase:firebase-auth'
+
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+}

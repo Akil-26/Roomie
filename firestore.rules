@@ -110,13 +110,9 @@ service cloud.firestore {
       allow create: if request.auth != null 
         && request.resource.data.senderId == request.auth.uid;
       
-      // 🔒 Only sender can update (for edit/delete)
-      // For payment requests: only toUsers can update payment status
-      allow update: if request.auth != null && (
-        request.auth.uid == resource.data.senderId
-        || (resource.data.type == 'paymentRequest' 
-            && request.auth.uid in resource.data.payToUserIds)
-      );
+      // Only sender can update (for edit/delete)
+      allow update: if request.auth != null 
+        && request.auth.uid == resource.data.senderId;
       
       allow delete: if request.auth != null 
         && request.auth.uid == resource.data.senderId;
@@ -133,38 +129,12 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members
         && request.resource.data.senderId == request.auth.uid;
       
-      // 🔒 Only sender can update/delete (or toUsers for payment status)
-      allow update: if request.auth != null && (
-        request.auth.uid == resource.data.senderId
-        || (resource.data.type == 'paymentRequest' 
-            && request.auth.uid in resource.data.payToUserIds)
-      );
+      // Only sender can update/delete
+      allow update: if request.auth != null 
+        && request.auth.uid == resource.data.senderId;
       
       allow delete: if request.auth != null 
         && request.auth.uid == resource.data.senderId;
-    }
-
-    // 💰 PAYMENT REQUESTS
-    match /payment_requests/{requestId} {
-      // Anyone can read their own payment requests
-      allow read: if request.auth != null && (
-        request.auth.uid == resource.data.requestedBy
-        || request.auth.uid in resource.data.targetUsers
-      );
-      
-      // Only authenticated users can create payment requests
-      allow create: if request.auth != null 
-        && request.resource.data.requestedBy == request.auth.uid;
-      
-      // 🔒 Only targetUsers can update their payment status
-      allow update: if request.auth != null && (
-        request.auth.uid == resource.data.requestedBy
-        || request.auth.uid in resource.data.targetUsers
-      );
-      
-      // Only requester can delete
-      allow delete: if request.auth != null 
-        && request.auth.uid == resource.data.requestedBy;
     }
 
     // 💸 EXPENSES

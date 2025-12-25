@@ -20,8 +20,6 @@ import 'package:roomie/data/models/message_model.dart';
 import 'package:roomie/presentation/widgets/chat_input_widget.dart';
 import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
 import 'package:roomie/presentation/widgets/poll_todo_dialogs.dart';
-import 'package:roomie/presentation/widgets/payment_request_bottom_sheet.dart';
-import 'package:roomie/presentation/widgets/payment_request_card.dart';
 import 'package:roomie/presentation/screens/groups/current_group_detail_s.dart';
 import 'package:roomie/presentation/screens/profile/other_user_profile_s.dart';
 import 'package:uuid/uuid.dart';
@@ -590,7 +588,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           onVoiceRecorded: (file, duration) => _handleVoiceUpload(file),
           onPollPressed: () => _showPollDialog(),
           onTodoPressed: () => _showTodoDialog(),
-          onPaymentPressed: () => _showPaymentRequestSheet(),
           isUploading: _isUploading,
           isGroup: _isGroup,
         ),
@@ -837,132 +834,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
     );
   }
-
-  /// Show dialog to add phone number (ONE TIME - NO OTP)
-  void _showAddPhoneDialog() {
-    final phoneController = TextEditingController();
-    final colorScheme = Theme.of(context).colorScheme;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.phone, color: colorScheme.primary),
-            const SizedBox(width: 8),
-            const Text('Add Phone Number'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Phone number is required for UPI payment requests.',
-              style: TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                hintText: '+91XXXXXXXXXX',
-                labelText: 'Phone Number',
-                prefixIcon: const Icon(Icons.phone_android),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                helperText: 'Enter with country code (e.g., +91)',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CANCEL'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final phone = phoneController.text.trim();
-              if (phone.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter phone number')),
-                );
-                return;
-              }
-
-              if (!phone.startsWith('+')) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Phone must include country code (e.g., +91)'),
-                  ),
-                );
-                return;
-              }
-
-              if (phone.length < 10) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter a valid phone number'),
-                  ),
-                );
-                return;
-              }
-
-              final currentUser = _authService.currentUser;
-              if (currentUser == null) return;
-
-              // Capture navigator and messenger before async
-              final navigator = Navigator.of(context);
-              final messenger = ScaffoldMessenger.of(context);
-
-              try {
-                // Save phone number to Firestore (permanent)
-                await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(currentUser.uid)
-                    .update({
-                  'phone': phone,
-                  'updatedAt': FieldValue.serverTimestamp(),
-                });
-
-                if (!mounted) return;
-                navigator.pop();
-                
-                // Show success message
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ Phone number saved! Proceeding with payment request...'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-
-                // Auto-retry payment request sheet
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  if (mounted) {
-                    _showPaymentRequestSheet();
-                  }
-                });
-              } catch (e) {
-                debugPrint('Error saving phone: $e');
-                if (!mounted) return;
-                messenger.showSnackBar(
-                  SnackBar(content: Text('Failed to save phone: $e')),
-                );
-              }
-            },
-            child: const Text('CONTINUE'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ❌ REMOVED: OTP verification no longer required
-  // Phone number is now used as identity info only
-  // No need to verify with OTP for payment requests
 
   void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
@@ -1377,11 +1248,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         padding: const EdgeInsets.only(bottom: 4),
                         child: _buildTodoWidget(message),
                       ),
-                    if (message.type == MessageType.paymentRequest)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: _buildPaymentRequestWidget(message),
-                      ),
                       ],
                     ),
                   ),
@@ -1719,44 +1585,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildPaymentRequestWidget(MessageModel message) {
-    final currentUserId = _authService.currentUser?.uid;
-    if (currentUserId == null) {
-      return const Text('Payment Request', style: TextStyle(color: Colors.grey));
-    }
-
-    final amount = message.paymentAmount ?? 0.0;
-    final note = message.paymentNote;
-    final toUsers = message.payToUserIds ?? [];
-    final paymentStatus = message.paymentStatus ?? {};
-    final senderPhone = message.payToPhoneNumber;
-    final senderUpiId = message.paymentUpiId;
-    final requestId = message.paymentRequestId ?? message.id;
-    
-    // Determine chat ID (works for both group and individual chats)
-    final chatId = message.extraData['chatId']?.toString() ?? 
-        (_isGroup ? message.receiverId : 
-        'chat_${message.senderId}_$currentUserId');
-
-    return PaymentRequestCard(
-      messageId: message.id,
-      chatId: chatId,
-      requestId: requestId,
-      amount: amount,
-      note: note,
-      senderName: message.senderName,
-      senderId: message.senderId,
-      senderUpiId: senderUpiId,
-      senderPhone: senderPhone,
-      paymentStatus: paymentStatus,
-      toUsers: toUsers,
-      memberNames: _memberNames,
-      currentUserId: currentUserId,
-      isGroupChat: _isGroup,
-      isCompleted: message.isPaymentCompleted,
     );
   }
 
@@ -2793,179 +2621,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _showCreateTodoSheet();
   }
 
-  Future<void> _showPaymentRequestSheet() async {
-    if (!_isGroup && _memberIds.length < 2) {
-      _showError('Cannot create payment request in empty chat');
-      return;
-    }
-
-    // 🔐 Check if phone number exists (ONE TIME CHECK)
-    final currentUser = _authService.currentUser;
-    if (currentUser == null) {
-      _showError('Please sign in to send payment requests');
-      return;
-    }
-
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
-
-      if (!userDoc.exists || userDoc.data() == null) {
-        _showError('User profile not found');
-        return;
-      }
-
-      final userData = userDoc.data()!;
-      final phone = userData['phone']?.toString();
-
-      // If phone missing → ask once, save, continue
-      if (phone == null || phone.isEmpty) {
-        _showAddPhoneDialog();
-        return;
-      }
-
-      // ✅ Phone exists - proceed with payment request
-    } catch (e) {
-      debugPrint('Error checking phone: $e');
-      _showError('Failed to check phone number. Please try again.');
-      return;
-    }
-
-    // Prepare member list for bottom sheet
-    final List<Map<String, dynamic>> groupMembers = [];
-    
-    if (_isGroup) {
-      // For group chats, include all members
-      for (final memberId in _memberIds) {
-        groupMembers.add({
-          'id': memberId,
-          'name': _memberNames[memberId] ?? 'Unknown',
-        });
-      }
-    } else {
-      // For 1-1 chats, include the other person
-      final otherUserId = _memberIds.firstWhere(
-        (id) => id != _authService.currentUser?.uid,
-        orElse: () => '',
-      );
-      if (otherUserId.isNotEmpty) {
-        groupMembers.add({
-          'id': otherUserId,
-          'name': _memberNames[otherUserId] ?? 'Unknown',
-        });
-      }
-    }
-
-    if (groupMembers.isEmpty) {
-      _showError('No members to request payment from');
-      return;
-    }
-
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => PaymentRequestBottomSheet(
-        groupMembers: groupMembers,
-        currentUserId: _authService.currentUser!.uid,
-        onSendRequest: (amount, selectedUserIds, description) {
-          _sendPaymentRequest(amount, selectedUserIds, description);
-        },
-      ),
-    );
-  }
-
-  Future<void> _sendPaymentRequest(
-    double amount,
-    List<String> targetUserIds,
-    String description,
-  ) async {
-    try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) return;
-
-      // ✅ STEP 1: Fetch and validate phone number
-      String? phoneNumber;
-      String? upiId;
-      try {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.uid)
-            .get();
-        
-        phoneNumber = userDoc.data()?['phone']?.toString();
-        upiId = userDoc.data()?['upiId']?.toString();
-
-        // ❌ Phone number validation
-        if (phoneNumber == null || phoneNumber.isEmpty) {
-          _showError(
-            'Phone number required for payment requests. Please add your phone number in profile settings.',
-          );
-          return;
-        }
-
-        // Optional: Verify phone number is verified
-        // if (!userDoc.data()?['phoneVerified']) {
-        //   _showError('Please verify your phone number first');
-        //   return;
-        // }
-      } catch (e) {
-        debugPrint('Failed to fetch user details: $e');
-        _showError('Failed to fetch user details. Please try again.');
-        return;
-      }
-
-      // ✅ STEP 2: Generate unique request ID
-      final requestId = 'req_${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}';
-
-      // ✅ STEP 3: Initialize payment status map (all users PENDING)
-      final paymentStatus = <String, String>{};
-      for (final userId in targetUserIds) {
-        paymentStatus[userId] = 'PENDING';
-      }
-
-      // Create payment request message text
-      final messageText = description.isEmpty
-          ? 'Payment request: ₹${amount.toStringAsFixed(2)}'
-          : 'Payment request: ₹${amount.toStringAsFixed(2)} - $description';
-
-      // ✅ STEP 4: Send message with all payment fields
-      if (_isGroup) {
-        await _chatService.sendGroupMessage(
-          groupId: _containerId!,
-          message: messageText,
-          type: MessageType.paymentRequest,
-          paymentAmount: amount,
-          payToUserIds: targetUserIds,
-          paymentNote: description.isNotEmpty ? description : 'Roomie Expenses',
-          payToPhoneNumber: phoneNumber,
-          paymentUpiId: upiId,
-          paymentRequestId: requestId,
-          paymentStatus: paymentStatus,
-        );
-      } else {
-        await _chatService.sendMessage(
-          chatId: _containerId!,
-          message: messageText,
-          type: MessageType.paymentRequest,
-          paymentAmount: amount,
-          payToUserIds: targetUserIds,
-          paymentNote: description.isNotEmpty ? description : 'Roomie Expenses',
-          payToPhoneNumber: phoneNumber,
-          paymentUpiId: upiId,
-          paymentRequestId: requestId,
-          paymentStatus: paymentStatus,
-        );
-      }
-
-      _scrollToBottom();
-    } catch (e) {
-      _showError('Failed to send payment request: $e');
-    }
-  }
 }
 
 class _MessageAction {

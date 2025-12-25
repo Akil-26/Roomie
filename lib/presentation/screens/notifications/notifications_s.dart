@@ -2,10 +2,69 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:roomie/data/models/notification_model.dart';
 import 'package:roomie/presentation/screens/groups/join_requests_s.dart';
+import 'package:roomie/presentation/screens/chat/chat_screen.dart';
+import 'package:roomie/presentation/screens/expenses/user_expenses_s.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/groups_service.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
+
+// Navigation handler for notifications
+void handleNotificationNavigation(
+  BuildContext context,
+  NotificationModel notification,
+) {
+  switch (notification.type) {
+    case 'chat':
+      if (notification.chatId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              chatData: {
+                'chatId': notification.chatId,
+                'receiverId': notification.data['senderId'] ?? '',
+                'receiverName': notification.senderName ?? 'User',
+              },
+              chatType: 'direct',
+            ),
+          ),
+        );
+      }
+      break;
+
+    case 'expense':
+      if (notification.groupId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => UserExpensesScreen(),
+          ),
+        );
+      }
+      break;
+
+    case 'payment':
+      // Navigate to expenses screen to see payment status
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => UserExpensesScreen(),
+        ),
+      );
+      break;
+
+    case 'group_join_conflict':
+    case 'join_request_received':
+      // These are handled by _handleJoinRequestTap which fetches group data
+      // No navigation here - already handled in the notification card
+      break;
+
+    default:
+      // For other notification types, just mark as read
+      break;
+  }
+}
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
@@ -267,10 +326,25 @@ class _NotificationCardState extends State<NotificationCard> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap:
-            isJoinRequestNotification
-                ? () => _handleJoinRequestTap(context)
-                : null,
+        onTap: () async {
+          // Mark as read if unread
+          if (!widget.notification.isRead) {
+            await notificationService.markAsRead(widget.notification.id);
+          }
+          
+          // Check if widget is still mounted before navigation
+          if (!mounted) return;
+          
+          // Navigate to appropriate screen
+          if (isJoinRequestNotification) {
+            // ignore: use_build_context_synchronously
+            await _handleJoinRequestTap(context);
+          } else {
+            if (!mounted) return;
+            // ignore: use_build_context_synchronously
+            handleNotificationNavigation(context, widget.notification);
+          }
+        },
         child: Container(
           decoration: BoxDecoration(
             color: widget.notification.isRead 
@@ -320,7 +394,7 @@ class _NotificationCardState extends State<NotificationCard> {
                         children: [
                           Expanded(
                             child: Text(
-                              widget.notification.title,
+                              widget.notification.getDynamicTitle(),
                               style: textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.onSurface,
@@ -340,7 +414,7 @@ class _NotificationCardState extends State<NotificationCard> {
                       ),
                       SizedBox(height: screenHeight * 0.008),
                       Text(
-                        widget.notification.body,
+                        widget.notification.getDynamicBody(),
                         style: textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                           height: 1.4,

@@ -209,6 +209,81 @@ class NotificationService {
     }
   }
 
+  // Create chat notification (dynamic data)
+  Future<void> createChatNotification({
+    required String userId,
+    required String senderName,
+    required String message,
+    Map<String, dynamic>? extraData,
+  }) async {
+    try {
+      final docRef = _userNotificationsRef(userId).doc();
+      await docRef.set({
+        'userId': userId,
+        'type': 'chat',
+        'senderName': senderName,
+        'message': message,
+        'data': extraData ?? {},
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'id': docRef.id,
+      });
+      print('✅ Chat notification created for $userId');
+    } catch (e) {
+      print('❌ Error creating chat notification: $e');
+    }
+  }
+
+  // Create expense notification (dynamic data)
+  Future<void> createExpenseNotification({
+    required String userId,
+    required String expenseTitle,
+    required int amount,
+    Map<String, dynamic>? extraData,
+  }) async {
+    try {
+      final docRef = _userNotificationsRef(userId).doc();
+      await docRef.set({
+        'userId': userId,
+        'type': 'expense',
+        'title': expenseTitle,
+        'amount': amount,
+        'data': extraData ?? {},
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'id': docRef.id,
+      });
+      print('✅ Expense notification created for $userId');
+    } catch (e) {
+      print('❌ Error creating expense notification: $e');
+    }
+  }
+
+  // Create payment notification (dynamic data)
+  Future<void> createPaymentNotification({
+    required String userId,
+    required String status,
+    required int amount,
+    Map<String, dynamic>? extraData,
+  }) async {
+    try {
+      final docRef = _userNotificationsRef(userId).doc();
+      await docRef.set({
+        'userId': userId,
+        'type': 'payment',
+        'status': status,
+        'amount': amount,
+        'data': extraData ?? {},
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'id': docRef.id,
+      });
+      print('✅ Payment notification created for $userId');
+    } catch (e) {
+      print('❌ Error creating payment notification: $e');
+    }
+  }
+
   // Get notifications for a user
   Stream<List<NotificationModel>> getNotifications(String userId) {
     // Query all and filter unread in memory to avoid composite index requirements
@@ -235,6 +310,14 @@ class NotificationService {
     } catch (e) {
       print('❌ Error marking notification as read: $e');
     }
+  }
+
+  // Get unread notification count stream
+  Stream<int> getUnreadCount(String userId) {
+    return _userNotificationsRef(userId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
   }
 
   // Delete a notification

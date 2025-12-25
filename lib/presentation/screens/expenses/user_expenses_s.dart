@@ -247,8 +247,8 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> with SingleTick
         }
       });
 
-      // Load only chat payment expenses (Roomie Expense section)
-      _expenseService.getChatPaymentExpenses(currentUser.uid).listen(
+      // Load user expenses (SMS-based transaction expenses)
+      _expenseService.getUserExpenses(currentUser.uid).listen(
         (list) {
           double spent = 0.0;
           double received = 0.0;

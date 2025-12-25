@@ -5,7 +5,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:roomie/data/models/message_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:roomie/presentation/widgets/payment_request_card.dart';
 
 class MessageBubbleWidget extends StatefulWidget {
   final MessageModel message;
@@ -243,22 +242,14 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
               ),
             ),
 
-          // Message bubble (payment requests render without bubble)
-          if (widget.message.type == MessageType.paymentRequest)
-            // Payment request card renders standalone without bubble wrapper
-            Padding(
-              padding: const EdgeInsets.only(left: 48, right: 48),
-              child: _buildMessageContent(textColor),
-            )
-          else
-            // Regular message with bubble styling
-            Row(
-              mainAxisAlignment:
-                  widget.isCurrentUser
-                      ? MainAxisAlignment.end
-                      : MainAxisAlignment.start,
-              children: [
-                if (!widget.isCurrentUser) ...[const SizedBox(width: 48)],
+          // Message bubble - all messages rendered with same styling
+          Row(
+            mainAxisAlignment:
+                widget.isCurrentUser
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
+            children: [
+              if (!widget.isCurrentUser) ...[const SizedBox(width: 48)],
                 Flexible(
                   child: GestureDetector(
                     onLongPress: widget.isCurrentUser ? _toggleOptions : null,
@@ -400,16 +391,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         return _buildTodoMessage(textColor);
       case MessageType.system:
         return _buildSystemMessage(textColor);
-      case MessageType.paymentRequest:
-        return _buildPaymentRequestMessage();
     }
   }
 
   Widget _buildTextMessage(Color textColor) {
-    // Payment requests are now handled by _buildPaymentRequestMessage()
-    // Message type routing (in _buildMessageContent) handles the dispatching
-    
-    // Normal text message
     return SelectableText(
       widget.message.message,
       style: TextStyle(color: textColor, fontSize: 16),
@@ -818,43 +803,6 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-
-  Widget _buildPaymentRequestMessage() {
-    if (widget.currentUserId == null) {
-      return Text('Payment Request', style: TextStyle(color: Colors.grey));
-    }
-
-    final amount = widget.message.paymentAmount ?? 0.0;
-    final note = widget.message.paymentNote;
-    final toUsers = widget.message.payToUserIds ?? [];
-    final paymentStatus = widget.message.paymentStatus ?? {};
-    final senderPhone = widget.message.payToPhoneNumber;
-    final senderUpiId = widget.message.paymentUpiId;
-    final requestId = widget.message.paymentRequestId ?? widget.message.id;
-    
-    // Determine chat ID (works for both group and individual chats)
-    final chatId = widget.message.extraData['chatId']?.toString() ?? 
-        (widget.isGroup ? widget.message.receiverId : 
-        'chat_${widget.message.senderId}_${widget.currentUserId}');
-
-    return PaymentRequestCard(
-      messageId: widget.message.id,
-      chatId: chatId,
-      requestId: requestId,
-      amount: amount,
-      note: note,
-      senderName: widget.message.senderName,
-      senderId: widget.message.senderId,
-      senderUpiId: senderUpiId,
-      senderPhone: senderPhone,
-      paymentStatus: paymentStatus,
-      toUsers: toUsers,
-      memberNames: widget.memberNames,
-      currentUserId: widget.currentUserId!,
-      isGroupChat: widget.isGroup,
-      isCompleted: widget.message.isPaymentCompleted,
-    );
   }
 }
 

@@ -5,13 +5,13 @@ import 'package:roomie/data/models/message_model.dart';
 import 'package:roomie/data/models/chat_model.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/cloudinary_service.dart';
+import 'package:roomie/data/datasources/notification_service.dart';
 
 class ChatService {
   final FirebaseDatabase _database = FirebaseDatabase.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
-  final CloudinaryService _cloudinary = CloudinaryService();
-
+  final CloudinaryService _cloudinary = CloudinaryService();  final NotificationService _notificationService = NotificationService();
   Future<String> uploadChatFile({
     required Uint8List bytes,
     required String fileName,
@@ -115,13 +115,6 @@ class ChatService {
     TodoData? todo,
     Map<String, dynamic>? extraData,
     bool isSystemMessage = false,
-    String? paymentRequestId,
-    double? paymentAmount,
-    List<String>? payToUserIds,
-    String? paymentNote,
-    String? paymentUpiId,
-    String? payToPhoneNumber,
-    Map<String, String>? paymentStatus,
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -180,13 +173,6 @@ class ChatService {
         todo: todo,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
-        paymentRequestId: paymentRequestId,
-        paymentAmount: paymentAmount,
-        payToUserIds: payToUserIds,
-        paymentNote: paymentNote,
-        paymentUpiId: paymentUpiId,
-        payToPhoneNumber: payToPhoneNumber,
-        paymentStatus: paymentStatus,
         seenBy:
             isSystemMessage || currentUser == null
                 ? {}
@@ -204,6 +190,16 @@ class ChatService {
           'lastMessageType': messageModel.type.name,
           'unreadCounts': updatedUnreadCounts,
         });
+      }
+
+      // Create notification for receiver
+      if (receiverId.isNotEmpty && !isSystemMessage && currentUser != null) {
+        await _notificationService.createChatNotification(
+          userId: receiverId,
+          senderName: senderName,
+          message: messageModel.previewText(),
+          extraData: {'chatId': chatId},
+        );
       }
 
       debugPrint('Message sent successfully: $messageId');
@@ -473,6 +469,7 @@ class ChatService {
     Map<String, dynamic>? extraData,
     String? paymentRequestId,
     double? paymentAmount,
+    String? paymentCurrency,
     List<String>? payToUserIds,
     String? paymentNote,
     String? paymentUpiId,
@@ -512,13 +509,6 @@ class ChatService {
         todo: todo,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
-        paymentRequestId: paymentRequestId,
-        paymentAmount: paymentAmount,
-        payToUserIds: payToUserIds,
-        paymentNote: paymentNote,
-        paymentUpiId: paymentUpiId,
-        payToPhoneNumber: payToPhoneNumber,
-        paymentStatus: paymentStatus,
         seenBy:
             isSystemMessage || currentUser == null
                 ? {}

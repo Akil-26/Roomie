@@ -14,6 +14,7 @@ import 'package:roomie/data/datasources/groups_service.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
 import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
 import 'package:roomie/presentation/screens/search/search_s.dart';
+import 'package:roomie/presentation/widgets/unread_badge.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -191,28 +192,41 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildNotificationIcon() {
     final colorScheme = Theme.of(context).colorScheme;
     final screenHeight = MediaQuery.of(context).size.height;
+    final userId = _authService.currentUser?.uid;
     
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: IconButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const NotificationsScreen(),
+    return Stack(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surface.withValues(alpha: 0),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationsScreen(),
+                ),
+              );
+            },
+            icon: Icon(
+              Icons.notifications_none,
+              color: colorScheme.onSurface,
+              size: screenHeight * 0.025,
             ),
-          );
-        },
-        icon: Icon(
-          Icons.notifications_none,
-          color: colorScheme.onSurface,
-          size: screenHeight * 0.025,
+            padding: EdgeInsets.zero,
+          ),
         ),
-        padding: EdgeInsets.zero,
-      ),
+        if (userId != null)
+          StreamBuilder<int>(
+            stream: _notificationService.getUnreadCount(userId),
+            builder: (context, snapshot) {
+              final count = snapshot.data ?? 0;
+              return UnreadBadge(count: count);
+            },
+          ),
+      ],
     );
   }
 
