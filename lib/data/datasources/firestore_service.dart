@@ -74,6 +74,14 @@ class FirestoreService {
       }
     }
 
+    // 🔒 SECURITY: Check if phone already exists for a different user
+    if (phone.isNotEmpty) {
+      final isTaken = await isPhoneTaken(phone, userId);
+      if (isTaken) {
+        throw Exception('This phone number already exists in Roomie. Please use a different number.');
+      }
+    }
+
     // Get existing data to preserve profile image URL if no new image is provided
     final docSnapshot = await docRef.get();
     String? existingProfileImageUrl;
@@ -112,7 +120,7 @@ class FirestoreService {
     final userData = {
       'username': username,
       'bio': bio,
-      'email': email,
+      'email': email.toLowerCase(), // Always save email in lowercase for consistency
       'phone': phone,
       'profileImageUrl': profileImageUrl, // Always include this field
       if (occupation != null) 'occupation': occupation,
@@ -149,6 +157,69 @@ class FirestoreService {
       print('Error checking email: $e');
       return false;
     }
+  }
+
+  /// 🔒 Check if phone number already exists for a different user
+  Future<bool> isPhoneTaken(String phone, String currentUserId) async {
+    try {
+      // Normalize phone number (remove spaces, ensure +91 prefix)
+      String normalizedPhone = phone.replaceAll(' ', '').replaceAll('-', '');
+      if (!normalizedPhone.startsWith('+')) {
+        normalizedPhone = '+91$normalizedPhone';
+      }
+      
+      final phoneQuery = await _firestore
+          .collection('users')
+          .where('phone', isEqualTo: normalizedPhone)
+          .get();
+
+      for (final doc in phoneQuery.docs) {
+        // Phone is taken if it belongs to a different user
+        if (doc.id != currentUserId) {
+          return true;
+        }
+      }
+      
+      // Also check without country code
+      final phoneWithoutCode = normalizedPhone.replaceFirst('+91', '');
+      final phoneQuery2 = await _firestore
+          .collection('users')
+          .where('phone', isEqualTo: phoneWithoutCode)
+          .get();
+
+      for (final doc in phoneQuery2.docs) {
+        if (doc.id != currentUserId) {
+          return true;
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      print('Error checking phone: $e');
+      return false;
+    }
+  }
+
+  /// 📱 Update user phone number (after OTP verification)
+  Future<void> updateUserPhone(String userId, String phone) async {
+    await _firestore.collection('users').doc(userId).update({
+      'phone': phone,
+      'phoneVerified': true,
+      'phoneVerifiedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    print('Phone number updated for user: $userId');
+  }
+
+  /// 📧 Update user email (after verification)
+  Future<void> updateUserEmail(String userId, String email) async {
+    await _firestore.collection('users').doc(userId).update({
+      'email': email.toLowerCase(),
+      'emailVerified': true,
+      'emailVerifiedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    print('Email updated for user: $userId');
   }
 
   /// Fetch user details (optional utility)

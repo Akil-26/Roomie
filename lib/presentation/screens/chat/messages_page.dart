@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:roomie/presentation/screens/chat/chat_screen.dart';
 import 'package:roomie/data/datasources/messages_service.dart';
-import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 class MessagesPage extends StatefulWidget {
@@ -121,30 +120,37 @@ class _MessagesPageState extends State<MessagesPage> {
                         width: 1,
                       ),
                     ),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: _onSearchChanged,
-                      textAlignVertical: TextAlignVertical.center,
-                      style: textTheme.bodyMedium,
-                      decoration: InputDecoration(
-                        hintText: 'Search messages',
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: colorScheme.onSurfaceVariant,
-                          size: screenHeight * 0.025,
+                    child: Center(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        textAlignVertical: TextAlignVertical.center,
+                        style: textTheme.bodyMedium,
+                        decoration: InputDecoration(
+                          hintText: 'Search',
+                          hintStyle: textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          prefixIcon: Padding(
+                            padding: EdgeInsets.only(left: screenWidth * 0.03, right: screenWidth * 0.02),
+                            child: Icon(
+                              Icons.search,
+                              color: colorScheme.onSurfaceVariant,
+                              size: screenHeight * 0.025,
+                            ),
+                          ),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 0,
+                            minHeight: 0,
+                          ),
+                          filled: true,
+                          fillColor: Colors.transparent,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          isCollapsed: true,
                         ),
-                        filled: true,
-                        fillColor: Colors.transparent,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.only(
-                          left: screenWidth * 0.04,
-                          right: screenWidth * 0.04,
-                          top: screenHeight * 0.0165,
-                          bottom: screenHeight * 0.0165,
-                        ),
-                        isDense: true,
                       ),
                     ),
                   ),
@@ -169,17 +175,10 @@ class _MessagesPageState extends State<MessagesPage> {
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _messagesService.getAllConversations(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Padding(
-                    padding: EdgeInsets.all(screenHeight * 0.04),
-                    child: const Center(
-                      child: RoomieLoadingWidget(
-                        size: 80,
-                        text: 'Loading conversations...',
-                        showText: true,
-                      ),
-                    ),
-                  );
+                // Show loading only if no data and still waiting
+                // With caching, we usually have data immediately
+                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                  return _buildShimmerLoading(screenHeight, screenWidth, colorScheme);
                 }
 
                 if (snapshot.hasError) {
@@ -257,12 +256,17 @@ class _MessagesPageState extends State<MessagesPage> {
                   );
                 }
 
-                return ListView.builder(
-                  itemCount: filteredConversations.length,
-                  itemBuilder: (context, index) {
-                    final conversation = filteredConversations[index];
-                    return _buildConversationTile(conversation, screenHeight, screenWidth);
-                  },
+                return RefreshIndicator(
+                  onRefresh: () => _messagesService.forceRefresh(),
+                  child: ListView.builder(
+                    padding: EdgeInsets.only(top: screenHeight * 0.012),  // Space below search bar
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: filteredConversations.length,
+                    itemBuilder: (context, index) {
+                      final conversation = filteredConversations[index];
+                      return _buildConversationTile(conversation, screenHeight, screenWidth);
+                    },
+                  ),
                 );
               },
             ),
@@ -323,16 +327,17 @@ class _MessagesPageState extends State<MessagesPage> {
 
     return Container(
       color: Theme.of(context).colorScheme.surface,
-      // Very small gap - only horizontal
       margin: EdgeInsets.symmetric(
         horizontal: screenWidth * 0.015,  // 1.5% left/right
-        vertical: screenHeight * 0.00,   // 0.1% top/bottom (very small)
+        vertical: screenHeight * 0.004,   // Small gap between items
       ),
       child: ListTile(
         contentPadding: EdgeInsets.symmetric(
           horizontal: screenWidth * 0.03,  // Reduced horizontal padding since margin is added
-          vertical: screenHeight * 0.006,
+          vertical: screenHeight * 0.003,  // Reduced vertical padding
         ),
+        dense: true,  // Makes ListTile more compact
+        visualDensity: VisualDensity.compact,
         leading: CircleAvatar(
           radius: screenHeight * 0.028,  // Slightly smaller - 2.8% instead of 3%
           backgroundColor:
@@ -439,6 +444,72 @@ class _MessagesPageState extends State<MessagesPage> {
               chatType: isGroup ? 'group' : 'individual',
             ),
       ),
+    );
+  }
+
+  // Shimmer loading effect for smooth UX (like WhatsApp)
+  Widget _buildShimmerLoading(double screenHeight, double screenWidth, ColorScheme colorScheme) {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.only(top: screenHeight * 0.012),  // Space below search bar
+      itemCount: 8,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: screenWidth * 0.04,
+            vertical: screenHeight * 0.005,  // Reduced vertical padding
+          ),
+          child: Row(
+            children: [
+              // Avatar shimmer
+              Container(
+                width: screenHeight * 0.06,
+                height: screenHeight * 0.06,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              SizedBox(width: screenWidth * 0.03),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Name shimmer
+                    Container(
+                      width: screenWidth * 0.4,
+                      height: screenHeight * 0.018,
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    SizedBox(height: screenHeight * 0.008),
+                    // Message shimmer
+                    Container(
+                      width: screenWidth * 0.6,
+                      height: screenHeight * 0.014,
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Time shimmer
+              Container(
+                width: screenWidth * 0.1,
+                height: screenHeight * 0.014,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

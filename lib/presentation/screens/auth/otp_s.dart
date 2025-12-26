@@ -7,8 +7,13 @@ import 'package:roomie/presentation/screens/profile/user_details_s.dart';
 
 class OtpScreen extends StatefulWidget {
   final String verificationId;
+  final bool isPhoneUpdate; // true = just verify & return, false = sign in flow
 
-  const OtpScreen({super.key, required this.verificationId});
+  const OtpScreen({
+    super.key, 
+    required this.verificationId,
+    this.isPhoneUpdate = false,
+  });
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -74,6 +79,25 @@ class _OtpScreenState extends State<OtpScreen> {
     setState(() => _loading = true);
 
     try {
+      // For phone update mode - just verify OTP and return true
+      if (widget.isPhoneUpdate) {
+        // Verify OTP credential without signing in
+        final credential = await AuthService().verifyOTPOnly(
+          verificationId: widget.verificationId,
+          smsCode: otp,
+        );
+        
+        if (credential) {
+          if (mounted) {
+            Navigator.pop(context, true); // Return true = verified successfully
+          }
+        } else {
+          throw Exception('Invalid OTP');
+        }
+        return;
+      }
+
+      // Normal sign-in flow
       final user = await AuthService().signInWithOTP(
         verificationId: widget.verificationId,
         smsCode: otp,

@@ -12,8 +12,8 @@ import 'package:roomie/presentation/screens/profile/user_profile_s.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/groups_service.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
-import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
 import 'package:roomie/presentation/screens/search/search_s.dart';
+import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
 import 'package:roomie/presentation/widgets/unread_badge.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -33,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _availableGroups = [];
   Map<String, dynamic>? _currentUserGroup;
   bool _isLoadingGroups = true;
-  bool _canUserCreateGroup = true;
+  bool _canUserCreateGroup = false; // Start as false, only show after confirming user has no group
 
   double _toDouble(dynamic value) {
     if (value is num) return value.toDouble();
@@ -471,6 +471,28 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
         ),
         actions: [
+          // Add button - Only show if user can create (not in any group)
+          if (!_isLoadingGroups && _canUserCreateGroup)
+            SizedBox(
+              height: screenHeight * 0.055,
+              width: screenHeight * 0.055,
+              child: IconButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CreateGroupScreen(),
+                    ),
+                  ).then((_) => _loadUserGroupData());
+                },
+                icon: Icon(
+                  Icons.add,
+                  color: colorScheme.onSurface,
+                  size: screenHeight * 0.025,
+                ),
+                padding: EdgeInsets.zero,
+              ),
+            ),
           // Notifications button with badge
           _buildNotificationButton(),
           SizedBox(width: screenWidth * 0.02),
@@ -495,29 +517,6 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: EdgeInsets.zero,
             ),
           ),
-          SizedBox(width: screenWidth * 0.02),
-          // Add button - Only show if user can create
-          if (_canUserCreateGroup)
-            SizedBox(
-              height: screenHeight * 0.055,
-              width: screenHeight * 0.055,
-              child: IconButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CreateGroupScreen(),
-                    ),
-                  ).then((_) => _loadUserGroupData());
-                },
-                icon: Icon(
-                  Icons.add,
-                  color: colorScheme.onSurface,
-                  size: screenHeight * 0.025,
-                ),
-                padding: EdgeInsets.zero,
-              ),
-            ),
           SizedBox(width: screenWidth * 0.028),
         ],
       ),
@@ -533,16 +532,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (_isLoadingGroups)
-                      const Padding(
-                        padding: EdgeInsets.all(32.0),
-                        child: Center(
-                          child: RoomieLoadingWidget(
-                            size: 80,
-                            text: 'Loading groups...',
-                            showText: true,
-                          ),
-                        ),
-                      )
+                      _buildShimmerLoading(screenWidth, screenHeight, colorScheme)
                     else ...[
                       // Current Room Section (show if user is in a group)
                       if (_currentUserGroup != null) ...[
@@ -1086,6 +1076,264 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildMessagesPage() {
     return const MessagesPage();
+  }
+
+  // Shimmer loading for home page - shows skeleton of current room + available rooms
+  Widget _buildShimmerLoading(double screenWidth, double screenHeight, ColorScheme colorScheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // "Current Room" title shimmer
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            screenWidth * 0.04,
+            0,
+            screenWidth * 0.04,
+            screenHeight * 0.005,
+          ),
+          child: Container(
+            width: screenWidth * 0.35,
+            height: screenHeight * 0.025,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+        ),
+        // Current Room Card shimmer
+        _buildCurrentRoomShimmer(screenWidth, screenHeight, colorScheme),
+        
+        // "Available Rooms" title shimmer
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            screenWidth * 0.04,
+            screenHeight * 0.015,
+            screenWidth * 0.04,
+            screenHeight * 0.01,
+          ),
+          child: Container(
+            width: screenWidth * 0.4,
+            height: screenHeight * 0.025,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+        ),
+        // Available Rooms list shimmer
+        _buildAvailableRoomsShimmer(screenWidth, screenHeight, colorScheme),
+      ],
+    );
+  }
+
+  // Shimmer for Current Room card (large card with image)
+  Widget _buildCurrentRoomShimmer(double screenWidth, double screenHeight, ColorScheme colorScheme) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.04,
+        vertical: screenHeight * 0.005,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16.0),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image placeholder shimmer with Roomie loading
+            Container(
+              height: 200,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: const Center(
+                child: RoomieLoadingWidget(size: 80),
+              ),
+            ),
+            // Content shimmer
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title shimmer
+                  Container(
+                    width: screenWidth * 0.5,
+                    height: screenHeight * 0.025,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  SizedBox(height: screenHeight * 0.012),
+                  // Description line 1
+                  Container(
+                    width: screenWidth * 0.8,
+                    height: screenHeight * 0.016,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  SizedBox(height: screenHeight * 0.008),
+                  // Description line 2
+                  Container(
+                    width: screenWidth * 0.6,
+                    height: screenHeight * 0.016,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  SizedBox(height: screenHeight * 0.018),
+                  // Meta chips row
+                  Row(
+                    children: [
+                      _buildChipShimmer(screenWidth * 0.25, colorScheme),
+                      SizedBox(width: screenWidth * 0.02),
+                      _buildChipShimmer(screenWidth * 0.2, colorScheme),
+                    ],
+                  ),
+                  SizedBox(height: screenHeight * 0.02),
+                  // Bottom row - members + button
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        width: screenWidth * 0.25,
+                        height: screenHeight * 0.016,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      Container(
+                        width: screenWidth * 0.18,
+                        height: screenHeight * 0.04,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Shimmer chip placeholder
+  Widget _buildChipShimmer(double width, ColorScheme colorScheme) {
+    return Container(
+      width: width,
+      height: 28,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(16),
+      ),
+    );
+  }
+
+  // Shimmer for Available Rooms list (compact list items)
+  Widget _buildAvailableRoomsShimmer(double screenWidth, double screenHeight, ColorScheme colorScheme) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.04,
+        vertical: screenHeight * 0.01,
+      ),
+      child: Column(
+        children: List.generate(3, (index) {
+          return Container(
+            margin: EdgeInsets.only(bottom: screenHeight * 0.02),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16.0),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                // Left content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Container(
+                        width: screenWidth * 0.45,
+                        height: screenHeight * 0.022,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      SizedBox(height: screenHeight * 0.008),
+                      // Subtitle (location + members)
+                      Container(
+                        width: screenWidth * 0.55,
+                        height: screenHeight * 0.016,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      SizedBox(height: screenHeight * 0.012),
+                      // Description line
+                      Container(
+                        width: screenWidth * 0.5,
+                        height: screenHeight * 0.014,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      SizedBox(height: screenHeight * 0.012),
+                      // Meta chips row
+                      Row(
+                        children: [
+                          _buildChipShimmer(screenWidth * 0.2, colorScheme),
+                          SizedBox(width: screenWidth * 0.02),
+                          _buildChipShimmer(screenWidth * 0.18, colorScheme),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Right - image placeholder with Roomie loading
+                Container(
+                  width: screenWidth * 0.2,
+                  height: screenWidth * 0.2,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: RoomieLoadingWidget(size: 40),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
   }
 }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:roomie/data/models/search_filters.dart';
+import 'package:roomie/data/datasources/room_visit_history_service.dart';
 import 'package:roomie/presentation/controllers/search_controller.dart' as sc;
 import 'package:roomie/presentation/screens/groups/available_group_detail_s.dart';
 import 'package:roomie/presentation/screens/search/search_map_picker_s.dart';
@@ -16,7 +17,9 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   late final sc.GroupsSearchController _controller;
   final TextEditingController _searchCtrl = TextEditingController();
+  final RoomVisitHistoryService _roomHistoryService = RoomVisitHistoryService();
   List<String> _history = const [];
+  List<Map<String, dynamic>> _visitedRooms = [];
   String? _geoPlaceName; // Cached place name for selected geo filter
   String _rentCurrency = 'INR';
   bool _showCurrencyPicker = false;
@@ -49,6 +52,7 @@ class _SearchScreenState extends State<SearchScreen> {
     _controller.addListener(_onChanged);
     _controller.init();
     _loadHistory();
+    _loadVisitedRooms();
   }
 
   void _onChanged() => setState(() {});
@@ -82,6 +86,61 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _loadHistory() async {
     final h = await _controller.getHistory();
     if (mounted) setState(() => _history = h);
+  }
+
+  Future<void> _loadVisitedRooms() async {
+    final rooms = await _roomHistoryService.getHistory();
+    if (mounted) setState(() => _visitedRooms = rooms);
+  }
+
+  Future<void> _addRoomToHistory(Map<String, dynamic> room) async {
+    await _roomHistoryService.addRoom(room);
+    await _loadVisitedRooms();
+  }
+
+  Future<void> _removeRoomFromHistory(int index) async {
+    await _roomHistoryService.removeAt(index);
+    await _loadVisitedRooms();
+  }
+
+  Future<void> _clearRoomHistory() async {
+    await _roomHistoryService.clear();
+    await _loadVisitedRooms();
+  }
+
+  void _showClearHistoryDialog(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear History'),
+        content: const Text('Are you sure you want to clear all recently viewed rooms?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _clearRoomHistory();
+            },
+            child: Text('Clear', style: TextStyle(color: cs.error)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _navigateToRoom(Map<String, dynamic> room) {
+    // Add to history and navigate
+    _addRoomToHistory(room);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AvailableGroupDetailScreen(group: room),
+      ),
+    );
   }
 
   @override
@@ -272,8 +331,68 @@ class _SearchScreenState extends State<SearchScreen> {
                     ((filters.roomType?.isNotEmpty ?? false)) ||
                     (filters.hasGeo);
 
-                // Until user searches or applies a filter, show a friendly empty state
+                // Until user searches or applies a filter, show visited rooms or empty state
                 if (!hasQuery && !hasActiveFilters) {
+                  // If there are visited rooms, show them
+                  if (_visitedRooms.isNotEmpty) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header with title and clear all button
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            screenWidth * 0.04,
+                            screenHeight * 0.015,
+                            screenWidth * 0.04,
+                            screenHeight * 0.008,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Recently Viewed',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: cs.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: () => _showClearHistoryDialog(context),
+                                icon: Icon(Icons.delete_outline, size: 18, color: cs.error),
+                                label: Text(
+                                  'Clear all',
+                                  style: TextStyle(color: cs.error),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Visited rooms list
+                        Expanded(
+                          child: ListView.separated(
+                            padding: EdgeInsets.fromLTRB(
+                              screenWidth * 0.010,
+                              0,
+                              screenWidth * 0.010,
+                              screenHeight * 0.015,
+                            ),
+                            itemBuilder: (_, i) {
+                              final room = _visitedRooms[i];
+                              return _VisitedRoomTile(
+                                room: room,
+                                onTap: () => _navigateToRoom(room),
+                                onRemove: () => _removeRoomFromHistory(i),
+                              );
+                            },
+                            separatorBuilder: (_, _) => SizedBox(height: screenHeight * 0.01),
+                            itemCount: _visitedRooms.length,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+                  
+                  // No visited rooms - show empty state
                   return Center(
                     child: Padding(
                       padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.08),
@@ -327,7 +446,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   padding: EdgeInsets.fromLTRB(screenWidth * 0.03, screenHeight * 0.01, screenWidth * 0.03, screenHeight * 0.015),
                   itemBuilder: (_, i) {
                     final g = _controller.results[i];
-                    return _GroupTile(group: g);
+                    return _GroupTile(
+                      group: g,
+                      onVisit: () => _addRoomToHistory(g),
+                    );
                   },
                   separatorBuilder:
                       (context, index) => SizedBox(height: screenHeight * 0.01),
@@ -728,7 +850,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
 class _GroupTile extends StatelessWidget {
   final Map<String, dynamic> group;
-  const _GroupTile({required this.group});
+  final VoidCallback? onVisit;
+  const _GroupTile({required this.group, this.onVisit});
 
   @override
   Widget build(BuildContext context) {
@@ -777,6 +900,7 @@ class _GroupTile extends StatelessWidget {
                   ),
                 ),
         onTap: () {
+          onVisit?.call();
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -784,6 +908,98 @@ class _GroupTile extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Widget for displaying visited room in history
+class _VisitedRoomTile extends StatelessWidget {
+  final Map<String, dynamic> room;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _VisitedRoomTile({
+    required this.room,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final name = room['name']?.toString() ?? 'Room';
+    final location = room['location']?.toString() ?? '';
+    final roomType = room['roomType']?.toString();
+    final rent =
+        room['rentAmount'] is num
+            ? (room['rentAmount'] as num).toDouble()
+            : null;
+    final currency = room['rentCurrency']?.toString() ?? '₹';
+
+    return Dismissible(
+      key: Key(room['id']?.toString() ?? name),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) => onRemove(),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: cs.error,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(Icons.delete, color: cs.onError),
+      ),
+      child: Card(
+        color: cs.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 1,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          leading: CircleAvatar(
+            backgroundColor: cs.secondaryContainer,
+            child: Icon(Icons.history, color: cs.onSecondaryContainer),
+          ),
+          title: Text(
+            name,
+            style: theme.textTheme.titleMedium?.copyWith(color: cs.onSurface),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            [
+              if (location.isNotEmpty) location,
+              if (roomType != null && roomType.isNotEmpty) roomType,
+            ].join(' • '),
+            style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (rent != null)
+                Text(
+                  '$currency${rent.toStringAsFixed(0)}',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: Icon(Icons.close, size: 18, color: cs.onSurfaceVariant),
+                onPressed: onRemove,
+                tooltip: 'Remove from history',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          onTap: onTap,
+        ),
       ),
     );
   }

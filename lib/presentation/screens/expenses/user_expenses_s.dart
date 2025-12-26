@@ -240,57 +240,123 @@ class _UserExpensesScreenState extends State<UserExpensesScreen> {
   }
 
   void _showMonthPicker() {
+    final now = DateTime.now();
+    int selectedYear = _selectedMonth.year;
+    
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        final now = DateTime.now();
-        final months = List.generate(12, (index) {
-          return DateTime(now.year, now.month - index, 1);
-        });
-        
-        return Container(
-          padding: const EdgeInsets.all(16),
-          height: 400,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Select Month',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: months.length,
-                  itemBuilder: (context, index) {
-                    final month = months[index];
-                    final isSelected = month.year == _selectedMonth.year &&
-                        month.month == _selectedMonth.month;
-                    
-                    return ListTile(
-                      title: Text(
-                        DateFormat('MMMM yyyy').format(month),
-                        style: TextStyle(
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final cs = Theme.of(context).colorScheme;
+            
+            // Generate months for the selected year
+            final months = List.generate(12, (index) {
+              return DateTime(selectedYear, 12 - index, 1);
+            }).where((month) {
+              // Don't show future months
+              return !month.isAfter(DateTime(now.year, now.month, 1));
+            }).toList();
+            
+            // Available years (from current year to 5 years back)
+            final years = List.generate(6, (index) => now.year - index);
+            
+            return Container(
+              padding: const EdgeInsets.all(16),
+              height: 450,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header with title and year selector
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Select Month',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      trailing: isSelected ? const Icon(Icons.check_circle) : null,
-                      selected: isSelected,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _loadSmsForMonth(month);
-                      },
-                    );
-                  },
-                ),
+                      // Year selector dropdown
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: cs.primaryContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: selectedYear,
+                            isDense: true,
+                            icon: Icon(Icons.keyboard_arrow_down, color: cs.onPrimaryContainer, size: 20),
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: cs.onPrimaryContainer,
+                            ),
+                            dropdownColor: cs.primaryContainer,
+                            items: years.map((year) {
+                              return DropdownMenuItem<int>(
+                                value: year,
+                                child: Text('$year'),
+                              );
+                            }).toList(),
+                            onChanged: (year) {
+                              if (year != null) {
+                                setModalState(() {
+                                  selectedYear = year;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: months.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No data for $selectedYear',
+                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: months.length,
+                            itemBuilder: (context, index) {
+                              final month = months[index];
+                              final isSelected = month.year == _selectedMonth.year &&
+                                  month.month == _selectedMonth.month;
+                              
+                              return ListTile(
+                                title: Text(
+                                  DateFormat('MMMM').format(month),
+                                  style: TextStyle(
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    color: isSelected ? cs.primary : null,
+                                  ),
+                                ),
+                                trailing: isSelected 
+                                    ? Icon(Icons.check_circle, color: cs.primary) 
+                                    : null,
+                                selected: isSelected,
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  _loadSmsForMonth(month);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

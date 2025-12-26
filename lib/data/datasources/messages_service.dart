@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
@@ -7,18 +8,92 @@ class MessagesService {
   final FirebaseDatabase _realtimeDB = FirebaseDatabase.instance;
   final AuthService _authService = AuthService();
 
+  // ========== LOCAL CACHE FOR INSTANT LOAD ==========
+  static List<Map<String, dynamic>> _cachedConversations = [];
+  static final _conversationsController = StreamController<List<Map<String, dynamic>>>.broadcast();
+  static bool _isListening = false;
+  static StreamSubscription? _groupsSubscription;
+  static StreamSubscription? _chatsSubscription;
+  static StreamSubscription? _groupChatsSubscription;
+
   // 📱 Get all conversations for the current user (both group and individual)
+  // Now uses local cache + real-time listeners for WhatsApp-like instant load
   Stream<List<Map<String, dynamic>>> getAllConversations() {
     final user = _authService.currentUser;
     if (user == null) {
       return Stream.value([]);
     }
 
-    // Return a stream that updates in real-time
-    return Stream.periodic(
-      const Duration(seconds: 2),
-      (_) => user.uid,
-    ).asyncMap((userId) => _getConversations(userId)).distinct();
+    // Emit cached data immediately if available (instant load like WhatsApp)
+    if (_cachedConversations.isNotEmpty) {
+      Future.microtask(() => _conversationsController.add(_cachedConversations));
+    }
+
+    // Start real-time listeners if not already listening
+    if (!_isListening) {
+      _startRealtimeListeners(user.uid);
+    }
+
+    // Also do a fresh fetch in background to ensure data is up-to-date
+    _refreshConversations(user.uid);
+
+    return _conversationsController.stream;
+  }
+
+  // Start real-time listeners for instant updates
+  void _startRealtimeListeners(String userId) {
+    if (_isListening) return;
+    _isListening = true;
+
+    // Listen to user's groups changes
+    _groupsSubscription = _firestore
+        .collection('groups')
+        .where('members', arrayContains: userId)
+        .where('isActive', isEqualTo: true)
+        .snapshots()
+        .listen((_) => _refreshConversations(userId));
+
+    // Listen to individual chats changes
+    _chatsSubscription = _realtimeDB
+        .ref('chats')
+        .onChildChanged
+        .listen((_) => _refreshConversations(userId));
+
+    // Listen to group chats changes
+    _groupChatsSubscription = _realtimeDB
+        .ref('groupChats')
+        .onChildChanged
+        .listen((_) => _refreshConversations(userId));
+  }
+
+  // Refresh conversations with debouncing
+  Timer? _refreshDebouncer;
+  Future<void> _refreshConversations(String userId) async {
+    // Debounce rapid updates
+    _refreshDebouncer?.cancel();
+    _refreshDebouncer = Timer(const Duration(milliseconds: 300), () async {
+      final conversations = await _getConversations(userId);
+      _cachedConversations = conversations;
+      _conversationsController.add(conversations);
+    });
+  }
+
+  // Dispose listeners when not needed
+  void dispose() {
+    _groupsSubscription?.cancel();
+    _chatsSubscription?.cancel();
+    _groupChatsSubscription?.cancel();
+    _isListening = false;
+  }
+
+  // Force refresh (e.g., pull to refresh)
+  Future<void> forceRefresh() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+    
+    final conversations = await _getConversations(user.uid);
+    _cachedConversations = conversations;
+    _conversationsController.add(conversations);
   }
 
   // 🔄 Get conversations by combining group and individual chats

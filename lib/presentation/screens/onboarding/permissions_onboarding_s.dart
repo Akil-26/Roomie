@@ -140,7 +140,7 @@ class _PermissionsOnboardingScreenState extends State<PermissionsOnboardingScree
                         isGranted: _notificationGranted,
                         colorScheme: cs,
                       ),
-                      SizedBox(height: screenHeight * 0.02),
+                      SizedBox(height: screenHeight * 0.015),
                       
                       _PermissionCard(
                         icon: Icons.location_on_outlined,
@@ -149,7 +149,7 @@ class _PermissionsOnboardingScreenState extends State<PermissionsOnboardingScree
                         isGranted: _locationGranted,
                         colorScheme: cs,
                       ),
-                      SizedBox(height: screenHeight * 0.02),
+                      SizedBox(height: screenHeight * 0.015),
                       
                       _PermissionCard(
                         icon: Icons.sms_outlined,
@@ -265,57 +265,64 @@ class _PermissionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(screenWidth * 0.04), // Responsive padding
       decoration: BoxDecoration(
         color: isGranted ? colorScheme.primaryContainer.withOpacity(0.3) : colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isGranted ? colorScheme.primary : colorScheme.outlineVariant,
-          width: 2,
+          width: 1.5,
         ),
       ),
       child: Row(
         children: [
+          // Icon container - smaller
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(screenWidth * 0.025),
             decoration: BoxDecoration(
               color: isGranted ? colorScheme.primaryContainer : colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               icon,
               color: isGranted ? colorScheme.primary : colorScheme.onSurfaceVariant,
-              size: 28,
+              size: 22,
             ),
           ),
-          const SizedBox(width: 16),
+          SizedBox(width: screenWidth * 0.03),
+          // Text content
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onSurface,
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (isOptional) ...[
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           'Optional',
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 9,
                             fontWeight: FontWeight.w600,
                             color: colorScheme.onSecondaryContainer,
                           ),
@@ -324,22 +331,26 @@ class _PermissionCard extends StatelessWidget {
                     ],
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   description,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 12,
                     color: colorScheme.onSurfaceVariant,
+                    height: 1.3,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: screenWidth * 0.02),
+          // Checkmark icon - smaller
           Icon(
             isGranted ? Icons.check_circle : Icons.circle_outlined,
             color: isGranted ? colorScheme.primary : colorScheme.onSurfaceVariant,
-            size: 28,
+            size: 24,
           ),
         ],
       ),

@@ -22,7 +22,6 @@ class SmsTransactionService {
   bool storePlainRawMessage = false;
   bool persistRemoteTransactions = false; // user can opt-in to cloud storage
   bool _hydrationAttempted = false; // remote -> local migration once
-  int _idSequence = 0; // uniqueness booster
 
   // Simple in-memory cache to speed access before Firestore stream delivers.
   final Map<String, SmsTransactionModel> _memoryCache = {};
@@ -188,7 +187,6 @@ class SmsTransactionService {
       final referenceNumber = _extractReferenceNumber(message);
       final category = _categorizeTransaction(merchantName, message);
 
-      final uniquePart = _idSequence++;
       // Create stable ID based on content (timestamp + amount + type + message hash)
       // This prevents duplicates when syncing multiple times
       final stableId = '${timestamp.millisecondsSinceEpoch}_${amount.toStringAsFixed(2)}_${type.name}_${_shortFingerprint(message)}';

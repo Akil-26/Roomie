@@ -5,10 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:roomie/data/datasources/firestore_service.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/models/user_model.dart';
 import 'package:roomie/presentation/widgets/profile_image_widget.dart';
+import 'package:roomie/presentation/screens/auth/otp_s.dart';
 import 'dart:io';
 
 class EditProfileScreen extends StatefulWidget {
@@ -39,12 +41,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   XFile? _selectedXFile; // For web compatibility
   bool _isLoading = false;
   String? _currentProfileImageUrl;
-  bool _isSendingEmailVerification = false;
-  bool _isCheckingEmailVerification = false;
-  String? _pendingEmail; // email awaiting verification
-  bool _emailVerified = false;
-  DateTime? _verificationSentAt;
-  bool _autoCheckingVerification = false;
+  
+  // Email state - only for first-time adding (phone login users)
+  String? _addedEmail; // New email added by user (only if they had no email)
+  bool _isAddingEmail = false;
+  
+  // Phone verification state
+  bool _phoneVerified = false;
+  String? _originalPhone; // Store original phone to detect changes
+  bool _isCheckingPhone = false;
 
   @override
   void initState() {
@@ -60,6 +65,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _phoneController = TextEditingController(
       text: widget.currentUser.phone ?? '',
     );
+    _originalPhone = widget.currentUser.phone ?? ''; // Store original phone
+    _phoneVerified = (widget.currentUser.phone ?? '').isNotEmpty; // Already verified if has phone
     _occupationController = TextEditingController(
       text: widget.currentUser.occupation ?? '',
     );
@@ -70,26 +77,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       text: widget.currentUser.upiId ?? '',
     );
     _currentProfileImageUrl = widget.currentUser.profileImageUrl;
-    _emailVerified = FirebaseAuth.instance.currentUser?.emailVerified ?? false;
-
-    // Clear pending state if user edits email away from the pending one
-    _emailController.addListener(() {
-      final pending = _pendingEmail;
-      if (pending != null &&
-          _emailController.text.trim().toLowerCase() != pending.toLowerCase()) {
-        setState(() {
-          _pendingEmail = null;
-          _verificationSentAt = null;
-        });
-      }
-    });
-
-    // Auto-check verification when app resumes
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_pendingEmail != null) {
-        _checkEmailVerificationStatus(silent: true);
-      }
-    });
   }
 
   @override
@@ -137,6 +124,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // 🔒 Check if phone number changed and needs verification
+    final currentPhone = _phoneController.text.trim();
+    final originalPhone = _originalPhone ?? '';
+    final phoneChanged = _normalizePhone(currentPhone) != _normalizePhone(originalPhone);
+    
+    if (phoneChanged && currentPhone.isNotEmpty && !_phoneVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('⚠️ Please verify your new phone number before saving'),
+          backgroundColor: Theme.of(context).colorScheme.tertiary,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -152,6 +155,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         }
       }
 
+      // 🔒 Check if phone is taken (double-check before save)
+      if (currentPhone.isNotEmpty && phoneChanged) {
+        final isTaken = await _firestoreService.isPhoneTaken(currentPhone, user.uid);
+        if (isTaken) {
+          throw Exception('This phone number is already registered with another account');
+        }
+      }
+
+      // 🔒 Email handling:
+      // - If user already has email: keep it (cannot change)
+      // - If user added new email via Google: use the new one
+      // - Once set, email cannot be changed
+      final emailToSave = _addedEmail ?? widget.currentUser.email;
+
       // Show a specific message if trying to upload image
       if (_selectedXFile != null) {
         if (mounted) {
@@ -166,13 +183,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         }
       }
 
+      // Determine phone to save - only save verified phone
+      final phoneToSave = _phoneVerified ? currentPhone : originalPhone;
+
       // First save the profile with image (if new image selected)
       await _firestoreService.saveUserProfile(
         userId: user.uid,
         username: _usernameController.text.trim(),
         bio: _bioController.text.trim(),
-        email: FirebaseAuth.instance.currentUser?.email ?? widget.currentUser.email,
-        phone: _phoneController.text.trim(),
+        email: emailToSave,
+        phone: phoneToSave,
         profileImage: _selectedXFile ?? _selectedImage, // Pass XFile or File
         occupation:
             _occupationController.text.trim().isEmpty
@@ -352,8 +372,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Future<void> _selectEmailFromGoogle() async {
+  // Add email for first-time users (phone login users who don't have email)
+  // This only GETS the Google email, does NOT sign in or change user
+  Future<void> _addEmailViaGoogle() async {
     final colorScheme = Theme.of(context).colorScheme;
+    
+    // 🔒 SECURITY: Don't allow if user already has an email
+    if (widget.currentUser.email.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('❌ You already have an email. Email cannot be changed.'),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    
+    setState(() => _isAddingEmail = true);
     
     try {
       // Show loading dialog
@@ -366,7 +402,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               const CircularProgressIndicator(),
               const SizedBox(width: 16),
               Text(
-                'Opening Google account...',
+                'Select Google account...',
                 style: TextStyle(color: colorScheme.onSurface),
               ),
             ],
@@ -374,266 +410,85 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       );
 
-      // Sign in with Google to get account email
-      await _authService.signInWithGoogle();
+      // Use GoogleSignIn just to GET the email, not sign in to Firebase
+      final GoogleSignIn googleSignIn = GoogleSignIn(scopes: ['email']);
+      
+      // Sign out first to ensure account picker shows
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
+      
+      // Show Google account picker
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
       
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        
-        // Get the updated user email
-        final user = FirebaseAuth.instance.currentUser;
-        if (user?.email != null) {
-          setState(() {
-            _emailController.text = user!.email!;
-            _pendingEmail = null;
-            _verificationSentAt = null;
-            _emailVerified = user.emailVerified;
-          });
-          
+      }
+      
+      if (googleUser == null) {
+        // User cancelled
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Email selected: ${user!.email}'),
-              backgroundColor: colorScheme.primary,
+              content: const Text('Google sign-in cancelled'),
+              backgroundColor: colorScheme.onSurfaceVariant,
               behavior: SnackBarBehavior.floating,
             ),
           );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to select email: $e'),
-            backgroundColor: colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _sendEmailVerificationForUpdate() async {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final newEmail = _emailController.text.trim();
-
-    if (newEmail.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Please enter an email'),
-          backgroundColor: colorScheme.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    // Basic email format check
-    final emailRegex = RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$");
-    if (!emailRegex.hasMatch(newEmail)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Please enter a valid email'),
-          backgroundColor: colorScheme.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isSendingEmailVerification = true);
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw FirebaseAuthException(code: 'user-not-found');
-
-      // Send verification depending on whether email changed or not
-      final currentEmail = user.email ?? '';
-      final actionCodeSettings = ActionCodeSettings(
-        url: 'https://roomie-app.example.com/email-update',
-        handleCodeInApp: false,
-      );
-
-      if (newEmail.toLowerCase() == currentEmail.toLowerCase()) {
-        // Verify existing email
-        await user.sendEmailVerification(actionCodeSettings);
-      } else {
-        // Verify before update to new email
-        await user.verifyBeforeUpdateEmail(newEmail, actionCodeSettings);
-      }
-
-      setState(() {
-        _pendingEmail = newEmail;
-        _verificationSentAt = DateTime.now();
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '✉️ Verification email sent!',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Check $newEmail and click the link to verify.',
-                style: const TextStyle(fontSize: 12),
-              ),
-            ],
-          ),
-          backgroundColor: colorScheme.primary,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        // Trigger re-authentication
-        if (mounted) {
-          setState(() => _isSendingEmailVerification = false);
-          
-          final reauthenticated = await _reauthenticateUser();
-          if (reauthenticated) {
-            // Retry sending verification after successful re-auth
-            await _sendEmailVerificationForUpdate();
-          }
         }
         return;
       }
       
-      String message = 'Failed to send verification';
-      if (e.code == 'invalid-email') {
-        message = 'Invalid email address.';
-      } else if (e.code == 'email-already-in-use') {
-        message = 'Email already in use.';
-      } else {
-        message = e.message ?? 'Failed to send verification';
-      }
+      final newEmail = googleUser.email;
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: colorScheme.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: colorScheme.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSendingEmailVerification = false);
-    }
-  }
-
-  Future<void> _checkEmailVerificationStatus({bool silent = false}) async {
-    final colorScheme = Theme.of(context).colorScheme;
-    setState(() {
-      if (silent) {
-        _autoCheckingVerification = true;
-      } else {
-        _isCheckingEmailVerification = true;
-      }
-    });
-    
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw FirebaseAuthException(code: 'user-not-found');
+      // 🔒 SECURITY: Check if this email already exists for ANY user in Firestore
+      // Use the CURRENT user's ID (phone user), not Google's
+      final currentUserId = widget.currentUser.uid;
+      final isEmailTaken = await _firestoreService.isEmailTaken(newEmail, currentUserId);
       
-      await user.reload();
-      final refreshed = FirebaseAuth.instance.currentUser;
-      
-      if (refreshed != null) {
-        final updatedEmail = refreshed.email ?? '';
-        final verified = refreshed.emailVerified;
+      if (isEmailTaken) {
+        // Email belongs to another user - show error and sign out from Google
+        await googleSignIn.signOut();
         
-        if (_pendingEmail != null && 
-            updatedEmail.toLowerCase() == _pendingEmail!.toLowerCase() && 
-            verified) {
-          // Email verified successfully!
-          setState(() {
-            _emailController.text = updatedEmail;
-            _pendingEmail = null;
-            _verificationSentAt = null;
-            _emailVerified = true;
-          });
-          
-          // Sync the new verified email to Firestore profile immediately
-          try {
-            await _firestoreService.saveUserDetails(refreshed.uid, updatedEmail);
-          } catch (e) {
-            print('Error syncing email to Firestore: $e');
-          }
-          
-          if (!silent && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: colorScheme.onSecondary),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        '✅ Email verified and updated successfully!',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-                backgroundColor: colorScheme.secondary,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 4),
-              ),
-            );
-          }
-        } else if (!silent) {
-          // Not verified yet
-          final timeSinceSent = _verificationSentAt != null 
-              ? DateTime.now().difference(_verificationSentAt!).inMinutes
-              : 0;
-          
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Not verified yet',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    timeSinceSent > 0
-                        ? 'Email sent $timeSinceSent min(s) ago. Check your inbox and spam folder.'
-                        : 'Please check your inbox and spam folder.',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
-              backgroundColor: colorScheme.onSurfaceVariant,
+              content: const Text('❌ This email is already registered with another Roomie account. Please use a different Google account.'),
+              backgroundColor: colorScheme.error,
               behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: 'Resend',
-                textColor: Colors.white,
-                onPressed: _sendEmailVerificationForUpdate,
-              ),
+              duration: const Duration(seconds: 5),
             ),
           );
         }
+        return;
       }
-    } catch (e) {
-      if (!silent && mounted) {
+      
+      // Sign out from GoogleSignIn (we just needed the email)
+      await googleSignIn.signOut();
+      
+      // Email is available - save it
+      setState(() {
+        _addedEmail = newEmail;
+        _emailController.text = newEmail;
+      });
+      
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error checking verification: $e'),
+            content: Text('✅ Email added: $newEmail (Save to confirm)'),
+            backgroundColor: colorScheme.primary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        // Try to close dialog if still open
+        try { Navigator.pop(context); } catch (_) {}
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add email: $e'),
             backgroundColor: colorScheme.error,
             behavior: SnackBarBehavior.floating,
           ),
@@ -641,10 +496,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isCheckingEmailVerification = false;
-          _autoCheckingVerification = false;
-        });
+        setState(() => _isAddingEmail = false);
       }
     }
   }
@@ -823,260 +675,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     _buildSectionTitle('Contact'),
                     SizedBox(height: screenHeight * 0.01),
                     
-                    // Email field with Google selector
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Email',
-                          style: textTheme.labelMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: colorScheme.outlineVariant,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(left: 12),
-                                child: Icon(
-                                  Icons.mail_outline,
-                                  color: colorScheme.onSurfaceVariant,
-                                  size: 20,
-                                ),
-                              ),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 16,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          _emailController.text.isEmpty
-                                              ? 'Your email address'
-                                              : _emailController.text,
-                                          style: textTheme.bodyMedium?.copyWith(
-                                            color: _emailController.text.isEmpty
-                                                ? colorScheme.onSurfaceVariant.withOpacity(0.6)
-                                                : colorScheme.onSurface,
-                                          ),
-                                        ),
-                                      ),
-                                      if (_emailVerified && 
-                                          FirebaseAuth.instance.currentUser?.email?.toLowerCase() == 
-                                          _emailController.text.trim().toLowerCase()) ...[
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: colorScheme.secondaryContainer,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.verified,
-                                                color: colorScheme.secondary,
-                                                size: 14,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'Verified',
-                                                style: TextStyle(
-                                                  color: colorScheme.secondary,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.only(right: 4),
-                                child: IconButton(
-                                  onPressed: _selectEmailFromGoogle,
-                                  icon: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Image.asset(
-                                        'assets/google_logo.png',
-                                        width: 20,
-                                        height: 20,
-                                        errorBuilder: (context, error, stackTrace) {
-                                          return Icon(
-                                            Icons.swap_horiz,
-                                            color: colorScheme.primary,
-                                          );
-                                        },
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Icon(
-                                        Icons.arrow_drop_down,
-                                        color: colorScheme.primary,
-                                      ),
-                                    ],
-                                  ),
-                                  tooltip: 'Change email via Google',
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: colorScheme.primaryContainer,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 12),
-                          child: Text(
-                            'Tap the Google icon to change your email',
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant.withOpacity(0.7),
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                      ],
+                    // Email field - conditional based on whether user has email
+                    _buildEmailField(
+                      colorScheme: colorScheme,
+                      textTheme: textTheme,
                     ),
-
-                    SizedBox(height: screenHeight * 0.01),
-                    Builder(
-                      builder: (context) {
-                        final currentAuth = FirebaseAuth.instance.currentUser;
-                        final matchesAuthEmail =
-                            (currentAuth?.email ?? '').toLowerCase() ==
-                            _emailController.text.trim().toLowerCase();
-                        final isVerified = currentAuth?.emailVerified ?? false;
-
-                        final shouldShowVerifyRow =
-                            _pendingEmail != null || !isVerified || !matchesAuthEmail;
-                        if (!shouldShowVerifyRow) return const SizedBox.shrink();
-
-                        final isEmailChanged = !matchesAuthEmail;
-                        final buttonLabel = isEmailChanged
-                            ? 'Verify & Update'
-                            : 'Send verification';
-
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: _isSendingEmailVerification
-                                  ? null
-                                  : _sendEmailVerificationForUpdate,
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                side: BorderSide(
-                                  color: colorScheme.primary,
-                                  width: 1.5,
-                                ),
-                              ),
-                              icon: _isSendingEmailVerification
-                                  ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                          colorScheme.primary,
-                                        ),
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.mark_email_read_outlined,
-                                      color: colorScheme.primary,
-                                    ),
-                              label: Text(
-                                buttonLabel,
-                                style: TextStyle(
-                                  color: colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            if (_pendingEmail != null) ...[
-                              SizedBox(height: screenHeight * 0.01),
-                              FilledButton.icon(
-                                onPressed: (_isCheckingEmailVerification || _autoCheckingVerification)
-                                    ? null
-                                    : () => _checkEmailVerificationStatus(silent: false),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: colorScheme.secondary,
-                                  foregroundColor: colorScheme.onSecondary,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                icon: (_isCheckingEmailVerification || _autoCheckingVerification)
-                                    ? SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                            colorScheme.onSecondary,
-                                          ),
-                                        ),
-                                      )
-                                    : const Icon(Icons.check_circle_outline),
-                                label: Text(
-                                  (_isCheckingEmailVerification || _autoCheckingVerification)
-                                      ? 'Checking verification…'
-                                      : "I've verified - Check now",
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        );
-                      },
-                    ),
-                    SizedBox(height: screenHeight * 0.008),
 
                     SizedBox(height: screenHeight * 0.015),
-                    _buildTextField(
-                      controller: _phoneController,
-                      label: 'Phone',
-                      hint: 'Enter your phone number',
-                      icon: Icons.phone_outlined,
-                      keyboardType: TextInputType.phone,
+                    // Phone field with verification
+                    _buildPhoneFieldWithVerification(
+                      screenHeight: screenHeight,
+                      screenWidth: screenWidth,
+                      colorScheme: colorScheme,
+                      textTheme: textTheme,
                     ),
 
                     SizedBox(height: screenHeight * 0.015),
@@ -1189,6 +800,274 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  // 📱 Phone field with verification button
+  Widget _buildPhoneFieldWithVerification({
+    required double screenHeight,
+    required double screenWidth,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+  }) {
+    final currentPhone = _phoneController.text.trim();
+    final originalPhone = _originalPhone ?? '';
+    final hasPhoneChanged = _normalizePhone(currentPhone) != _normalizePhone(originalPhone);
+    final needsVerification = hasPhoneChanged && currentPhone.isNotEmpty;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Phone',
+          style: textTheme.titleSmall?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        SizedBox(height: screenHeight * 0.01),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                onChanged: (_) => setState(() {}), // Rebuild to show verify button
+                decoration: InputDecoration(
+                  hintText: 'Enter your phone number',
+                  hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                  prefixIcon: Icon(Icons.phone_outlined, color: colorScheme.onSurfaceVariant),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: colorScheme.primary),
+                  ),
+                  filled: true,
+                  fillColor: colorScheme.surfaceContainerHighest,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  // Show verification status
+                  suffixIcon: _phoneVerified && !hasPhoneChanged
+                      ? Tooltip(
+                          message: 'Verified',
+                          child: Icon(
+                            Icons.verified,
+                            color: colorScheme.primary,
+                          ),
+                        )
+                      : null,
+                ),
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            // Verify button if phone changed
+            if (needsVerification) ...[
+              SizedBox(width: screenWidth * 0.02),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _isCheckingPhone ? null : _onVerifyPhonePressed,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colorScheme.secondary,
+                    foregroundColor: colorScheme.onSecondary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03),
+                  ),
+                  icon: _isCheckingPhone
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.onSecondary,
+                          ),
+                        )
+                      : const Icon(Icons.verified_user, size: 18),
+                  label: Text(
+                    _isCheckingPhone ? '...' : 'Verify',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        // Helper text
+        if (needsVerification)
+          Padding(
+            padding: EdgeInsets.only(top: screenHeight * 0.005),
+            child: Text(
+              '⚠️ New phone number requires OTP verification',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.tertiary,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          )
+        else if (_phoneVerified && currentPhone.isNotEmpty && !hasPhoneChanged)
+          Padding(
+            padding: EdgeInsets.only(top: screenHeight * 0.005),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, size: 14, color: colorScheme.primary),
+                const SizedBox(width: 4),
+                Text(
+                  'Verified',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Normalize phone number for comparison
+  String _normalizePhone(String phone) {
+    String normalized = phone.replaceAll(' ', '').replaceAll('-', '').replaceAll('(', '').replaceAll(')', '');
+    if (normalized.startsWith('+91')) {
+      normalized = normalized.substring(3);
+    } else if (normalized.startsWith('91') && normalized.length > 10) {
+      normalized = normalized.substring(2);
+    }
+    return normalized;
+  }
+
+  // Handle verify phone button press - uses existing OTP screen
+  Future<void> _onVerifyPhonePressed() async {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please enter a phone number'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
+
+    // Validate phone format (10 digits)
+    final normalizedPhone = _normalizePhone(phone);
+    if (normalizedPhone.length != 10 || !RegExp(r'^[0-9]+$').hasMatch(normalizedPhone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please enter a valid 10-digit phone number'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isCheckingPhone = true);
+
+    try {
+      final user = _authService.currentUser;
+      if (user == null) throw Exception('User not found');
+
+      // Check if phone is already taken by another user
+      final isTaken = await _firestoreService.isPhoneTaken(phone, user.uid);
+      if (isTaken) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('❌ This phone number is already registered with another account'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Format phone number with country code
+      String formattedPhone = phone.replaceAll(' ', '').replaceAll('-', '');
+      if (!formattedPhone.startsWith('+')) {
+        formattedPhone = '+91$formattedPhone';
+      }
+
+      // Send OTP using existing auth service
+      await _authService.sendOTP(
+        phoneNumber: formattedPhone,
+        onCodeSent: (verificationId) async {
+          if (mounted) {
+            // Navigate to existing OTP screen with isPhoneUpdate flag
+            final result = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(
+                builder: (context) => OtpScreen(
+                  verificationId: verificationId,
+                  isPhoneUpdate: true, // This ensures it just verifies and returns
+                ),
+                settings: RouteSettings(arguments: formattedPhone),
+              ),
+            );
+
+            // If user successfully verified (result == true from OTP screen)
+            if (result == true && mounted) {
+              final currentUser = FirebaseAuth.instance.currentUser;
+              if (currentUser != null) {
+                // Update phone in Firestore
+                await _firestoreService.updateUserPhone(user.uid, formattedPhone);
+                
+                setState(() {
+                  _phoneVerified = true;
+                  _originalPhone = formattedPhone;
+                  _phoneController.text = formattedPhone;
+                });
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('✅ Phone number verified successfully!'),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                  ),
+                );
+              }
+            }
+          }
+        },
+        onFailed: (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to send OTP: ${error.message}'),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingPhone = false);
+      }
+    }
+  }
+
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -1270,6 +1149,191 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         color: colorScheme.onSurface,
         fontWeight: FontWeight.w700,
       ),
+    );
+  }
+
+  // Email field - shows different UI based on whether user has email or not
+  Widget _buildEmailField({
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+  }) {
+    // Get current email - either original, newly added, or empty
+    final currentEmail = _addedEmail ?? widget.currentUser.email;
+    final hasEmail = currentEmail.isNotEmpty;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Email',
+          style: textTheme.labelMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        
+        if (hasEmail) ...[
+          // User HAS email - show locked read-only field
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.mail_outline,
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    currentEmail,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                // Verified badge - show if email is verified OR if it's newly added via Google
+                if ((FirebaseAuth.instance.currentUser?.emailVerified ?? false) || _addedEmail != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified,
+                          color: colorScheme.secondary,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Verified',
+                          style: TextStyle(
+                            color: colorScheme.secondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                // Lock icon to show it's not editable
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.lock_outline,
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Text(
+              'Email cannot be changed for security reasons',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ] else ...[
+          // User has NO email - show "Add email" button
+          InkWell(
+            onTap: _isAddingEmail ? null : _addEmailViaGoogle,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.primary.withOpacity(0.5),
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.mail_outline,
+                    color: colorScheme.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Add email address',
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  if (_isAddingEmail)
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colorScheme.primary,
+                      ),
+                    )
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/images/google_logo.png',
+                          width: 20,
+                          height: 20,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              Icons.g_mobiledata,
+                              color: colorScheme.primary,
+                              size: 24,
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.add_circle_outline,
+                          color: colorScheme.primary,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Text(
+              'Link your Google account to add an email',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

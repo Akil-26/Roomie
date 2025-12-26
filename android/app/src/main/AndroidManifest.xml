@@ -4,10 +4,22 @@
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.RECEIVE_SMS"/>
     
+    <!-- Internet permission for maps -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    
     <application
         android:label="roomie"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+        
+        <!-- Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="@string/google_maps_api_key_from_env"/>
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
