@@ -9,7 +9,6 @@ class UserModel {
   final String? profileImageUrl;
   final String? occupation;
   final int? age;
-  final String? upiId; // UPI ID in format: username@bank
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -24,7 +23,6 @@ class UserModel {
     this.profileImageUrl,
     this.occupation,
     this.age,
-    this.upiId,
     this.createdAt,
     this.updatedAt,
   });
@@ -41,7 +39,6 @@ class UserModel {
       profileImageUrl: map['profileImageUrl'],
       occupation: map['occupation'],
       age: map['age'],
-      upiId: map['upiId'],
       createdAt: map['createdAt']?.toDate(),
       updatedAt: map['updatedAt']?.toDate(),
     );
@@ -58,7 +55,6 @@ class UserModel {
       'profileImageUrl': profileImageUrl,
       'occupation': occupation,
       'age': age,
-      'upiId': upiId,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
     };
@@ -86,7 +82,6 @@ class UserModel {
     String? profileImageUrl,
     String? occupation,
     int? age,
-    String? upiId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -101,7 +96,6 @@ class UserModel {
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       occupation: occupation ?? this.occupation,
       age: age ?? this.age,
-      upiId: upiId ?? this.upiId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

@@ -88,6 +88,16 @@ class NotificationService {
 
         // Handle notification taps (background/killed app)
         FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+        
+        // Check if app was opened from terminated state via notification
+        final initialMessage = await _fcm.getInitialMessage();
+        if (initialMessage != null) {
+          print('🚀 App opened from terminated state via notification');
+          // Delay to ensure navigator is ready
+          Future.delayed(const Duration(milliseconds: 500), () {
+            _handleNotificationTap(initialMessage);
+          });
+        }
       }
     } catch (e) {
       print('❌ Error initializing notifications: $e');
@@ -436,5 +446,61 @@ class NotificationService {
   void showLocalNotification({required String title, required String body}) {
     // In a real app, you'd use flutter_local_notifications here
     print('🔔 Local notification: $title - $body');
+  }
+
+  /// Send push notification to a specific user via FCM
+  /// This is used when Cloud Functions are not available
+  Future<void> sendPushNotification({
+    required String receiverId,
+    required String title,
+    required String body,
+    Map<String, String>? data,
+  }) async {
+    try {
+      // Get receiver's FCM token from Firestore
+      final userDoc = await _firestore.collection('users').doc(receiverId).get();
+      final fcmToken = userDoc.data()?['fcmToken'] as String?;
+      
+      if (fcmToken == null || fcmToken.isEmpty) {
+        print('⚠️ No FCM token found for user: $receiverId');
+        return;
+      }
+
+      // Store the notification request in Firestore for the Cloud Function to process
+      // This works as a trigger mechanism even without deployed Cloud Functions
+      await _firestore.collection('push_notifications').add({
+        'token': fcmToken,
+        'notification': {
+          'title': title,
+          'body': body,
+        },
+        'data': data ?? {},
+        'createdAt': FieldValue.serverTimestamp(),
+        'processed': false,
+      });
+      
+      print('✅ Push notification queued for $receiverId');
+    } catch (e) {
+      print('❌ Error sending push notification: $e');
+    }
+  }
+
+  /// Send chat push notification to receiver
+  Future<void> sendChatPushNotification({
+    required String receiverId,
+    required String senderName,
+    required String messagePreview,
+    required String chatId,
+  }) async {
+    await sendPushNotification(
+      receiverId: receiverId,
+      title: senderName,
+      body: messagePreview,
+      data: {
+        'route': '/chat/$chatId',
+        'chatId': chatId,
+        'type': 'chat_message',
+      },
+    );
   }
 }

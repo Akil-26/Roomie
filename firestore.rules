@@ -153,5 +153,15 @@ service cloud.firestore {
       allow update, delete: if request.auth != null 
         && request.auth.uid == resource.data.paidBy;
     }
+
+    // 🔔 PUSH NOTIFICATIONS QUEUE
+    // Used by Cloud Functions to send FCM push notifications
+    match /push_notifications/{notificationId} {
+      // Authenticated users can create push notification requests
+      allow create: if request.auth != null;
+      
+      // Only Cloud Functions can read/update/delete (via admin SDK)
+      allow read, update, delete: if false;
+    }
   }
 }

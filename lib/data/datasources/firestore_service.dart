@@ -55,7 +55,6 @@ class FirestoreService {
     dynamic profileImage, // Can be File, XFile, or null
     String? occupation,
     int? age,
-    String? upiId, // UPI ID in format: username@bank
   }) async {
     final docRef = _firestore.collection('users').doc(userId);
 
@@ -125,7 +124,6 @@ class FirestoreService {
       'profileImageUrl': profileImageUrl, // Always include this field
       if (occupation != null) 'occupation': occupation,
       if (age != null) 'age': age,
-      if (upiId != null && upiId.isNotEmpty) 'upiId': upiId.trim().toLowerCase(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
 

@@ -3,6 +3,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:roomie/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:roomie/presentation/screens/auth/login_s.dart';
 import 'package:roomie/presentation/screens/home/home_s.dart';
 import 'package:roomie/presentation/screens/profile/user_profile_s.dart';
@@ -18,6 +20,69 @@ import 'package:roomie/data/datasources/sms_transaction_service.dart';
 
 // Global navigator key for notification deep-linking
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// Background message handler - must be a top-level function
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Ensure Firebase is initialized for background handler
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  
+  print('📬 Background message received: ${message.notification?.title}');
+  
+  // Show local notification for background messages
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+  
+  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    'high_importance_channel',
+    'High Importance Notifications',
+    channelDescription: 'Chat and important notifications',
+    importance: Importance.max,
+    priority: Priority.high,
+    showWhen: true,
+    icon: '@mipmap/ic_launcher',
+  );
+  
+  const NotificationDetails notificationDetails = NotificationDetails(
+    android: androidDetails,
+  );
+  
+  // Generate unique notification ID
+  final notificationId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  
+  await flutterLocalNotificationsPlugin.show(
+    notificationId,
+    message.notification?.title ?? 'Roomie',
+    message.notification?.body ?? 'You have a new message',
+    notificationDetails,
+    payload: message.data['route'],
+  );
+}
+
+// Create notification channel for Android
+Future<void> _createNotificationChannel() async {
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'high_importance_channel', // Same ID as in Cloud Function
+    'High Importance Notifications',
+    description: 'Chat messages and important notifications',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+    showBadge: true,
+  );
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+  
+  AppLogger.d('✅ Android notification channel created');
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +130,13 @@ void main() async {
       '🔧 App will continue to boot, but Firebase features may be unavailable.',
     );
   }
+
+  // Register background message handler (must be after Firebase init)
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  AppLogger.d('✅ Background message handler registered');
+
+  // Create Android notification channel
+  await _createNotificationChannel();
 
   // Initialize notifications with navigator key
   try {

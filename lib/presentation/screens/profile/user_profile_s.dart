@@ -16,7 +16,8 @@ class UserProfileScreen extends StatefulWidget {
   State<UserProfileScreen> createState() => _UserProfileScreenState();
 }
 
-class _UserProfileScreenState extends State<UserProfileScreen> {
+class _UserProfileScreenState extends State<UserProfileScreen>
+    with SingleTickerProviderStateMixin {
   final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
   final ProfileImageNotifier _profileImageNotifier = ProfileImageNotifier();
@@ -24,12 +25,36 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   bool _isLoading = true;
   int _followersCount = 0;
   int _followingCount = 0;
-  // Legacy Mongo widget removed; key no longer required.
+  
+  // Animation controller
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animations
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOut));
+    
     _loadUserData();
+  }
+  
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserData() async {
@@ -63,6 +88,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             _currentUser = UserModel.fromMap(userData, user.uid);
             _isLoading = false;
           });
+          
+          // Start animation after data loads
+          _animationController.forward();
 
           // Load follower/following counts
           _loadFollowCounts();
@@ -86,6 +114,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             _isLoading = false;
           });
           _loadFollowCounts();
+          
+          // Start animation
+          _animationController.forward();
+          
           // Also seed notifier with Google photoURL if present
           if (user.photoURL != null) {
             _profileImageNotifier.updateProfileImage(user.photoURL!);
@@ -115,34 +147,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
 
     if (_isLoading) {
+      final colorScheme = Theme.of(context).colorScheme;
+      final screenWidth = MediaQuery.of(context).size.width;
+      final screenHeight = MediaQuery.of(context).size.height;
+      
       return Scaffold(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        appBar: AppBar(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(
-              Icons.arrow_back,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: Text(
-            'Profile',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-              letterSpacing: -0.015,
-            ),
-          ),
-          centerTitle: true,
-        ),
-        body: Center(
-          child: CircularProgressIndicator(
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
+        backgroundColor: colorScheme.surface,
+        body: _buildSkeletonLoading(colorScheme, screenWidth, screenHeight),
       );
     }
 
@@ -200,122 +211,535 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        backgroundColor: colorScheme.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          'Profile',
-          style: textTheme.titleMedium?.copyWith(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.015,
-            fontSize: screenHeight * 0.03, // Responsive font size
+      body: CustomScrollView(
+        slivers: [
+          // Modern SliverAppBar with gradient hero
+          SliverAppBar(
+            expandedHeight: screenHeight * 0.38,
+            floating: false,
+            pinned: true,
+            backgroundColor: colorScheme.surface,
+            leading: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.surface.withOpacity(0.8),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: Icon(Icons.arrow_back_rounded, color: colorScheme.onSurface),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            actions: [
+              Container(
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface.withOpacity(0.8),
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: Icon(Icons.edit_rounded, color: colorScheme.primary),
+                  onPressed: () => _navigateToEditProfile(),
+                ),
+              ),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: _buildHeroSection(colorScheme, textTheme, screenHeight),
+            ),
           ),
-        ),
-        centerTitle: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              icon: Icon(Icons.edit, color: colorScheme.primary),
-              onPressed: () async {
-                if (_currentUser != null) {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (context) =>
-                              EditProfileScreen(currentUser: _currentUser!),
-                    ),
-                  );
-
-                  // Reload user data if profile was updated
-                  if (result is Map) {
-                    // Optimistic update if we received new URL back
-                    final newUrl = result['profileImageUrl'] as String?;
-                    if (newUrl != null && newUrl.isNotEmpty) {
-                      print('Optimistically updating profile image to $newUrl');
-                      _profileImageNotifier.updateProfileImage(newUrl);
-                      setState(() {
-                        _currentUser = _currentUser!.copyWith(
-                          profileImageUrl: newUrl,
-                        );
-                      });
-                    }
-                    _loadUserData(); // still refetch to ensure consistency
-                  } else if (result == true) {
-                    // Backward compatibility if we just returned true
-                    _loadUserData();
-                  }
-                }
-              },
+          
+          // Content
+          SliverToBoxAdapter(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 20),
+                      
+                      // Stats Cards Row
+                      _buildStatsRow(colorScheme, textTheme),
+                      
+                      const SizedBox(height: 20),
+                      
+                      // About Section
+                      _buildAboutSection(colorScheme, textTheme),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Quick Actions
+                      _buildQuickActions(colorScheme, textTheme),
+                      
+                      SizedBox(height: screenHeight * 0.05),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 3),
-            // Header Card (Profile picture + name + bio)
-            Padding(
-              padding: EdgeInsets.all(screenWidth * 0.02),  // 2% gap on all sides
-              child: _buildHeaderCard(),
+    );
+  }
+
+  void _navigateToEditProfile() async {
+    if (_currentUser != null) {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EditProfileScreen(currentUser: _currentUser!),
+        ),
+      );
+
+      if (result is Map) {
+        final newUrl = result['profileImageUrl'] as String?;
+        if (newUrl != null && newUrl.isNotEmpty) {
+          _profileImageNotifier.updateProfileImage(newUrl);
+          setState(() {
+            _currentUser = _currentUser!.copyWith(profileImageUrl: newUrl);
+          });
+        }
+        _loadUserData();
+      } else if (result == true) {
+        _loadUserData();
+      }
+    }
+  }
+
+  // Hero section with gradient and profile info
+  Widget _buildHeroSection(ColorScheme colorScheme, TextTheme textTheme, double screenHeight) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.primary,
+            colorScheme.primary.withOpacity(0.8),
+            colorScheme.secondary.withOpacity(0.6),
+          ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Decorative circles
+          Positioned(
+            top: -50,
+            right: -50,
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.1),
+              ),
             ),
-
-            const SizedBox(height: 3),
-
-            // Followers / Following stats
-            Padding(
-              padding: EdgeInsets.all(screenWidth * 0.02),  // 2% gap on all sides
-              child: _buildFollowStatsRow(),
+          ),
+          Positioned(
+            bottom: 50,
+            left: -30,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.08),
+              ),
             ),
-
-            const SizedBox(height: 3),
-
-            // Profile Information (compact card)
-            Padding(
-              padding: EdgeInsets.all(screenWidth * 0.02),  // 2% gap on all sides
-              child: _buildDetailsCard(),
-            ),
-
-            const SizedBox(height: 3),
-
-            // Action Buttons
-            Padding(
-              padding: EdgeInsets.all(screenWidth * 0.02),  // 2% gap on all sides
+          ),
+          
+          // Profile content
+          SafeArea(
+            child: Center(
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildActionTile(
-                    icon: Icons.account_balance_wallet_outlined,
-                    title: 'My Expenses',
-                    subtitle: 'View your spending summary',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const UserExpensesScreen(),
+                  const SizedBox(height: 40),
+                  
+                  // Profile Image with gradient ring
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white,
+                          Colors.white.withOpacity(0.6),
+                        ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
                         ),
-                      );
-                    },
+                      ],
+                    ),
+                    child: ProfileImageWidget(
+                      imageUrl: _currentUser!.profileImageUrl ??
+                          _profileImageNotifier.currentImageId,
+                      radius: 50,
+                      placeholder: Icon(
+                        Icons.person_rounded,
+                        size: 50,
+                        color: colorScheme.primary,
+                      ),
+                    ),
                   ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Username
+                  Text(
+                    _currentUser!.displayName,
+                    style: textTheme.headlineSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  
+                  const SizedBox(height: 6),
+                  
+                  // Bio
+                  if (_currentUser!.bio != null && _currentUser!.bio!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: Text(
+                        _currentUser!.bio!,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    
                   const SizedBox(height: 12),
-                  _buildActionTile(
-                    icon: Icons.logout,
-                    title: 'Logout',
-                    subtitle: 'Sign out of your account',
-                    onTap: _showLogoutDialog,
-                    isDestructive: true,
-                  ),
+                  
+                  // Member badge
+                  if (_currentUser!.createdAt != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.verified_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Member since ${_formatDate(_currentUser!.createdAt!)}',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            const SizedBox(height: 40),
-          ],
+  // Stats row with followers/following - compact inline design
+  Widget _buildStatsRow(ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildStatItem(
+              value: _followersCount.toString(),
+              label: 'Followers',
+              colorScheme: colorScheme,
+              textTheme: textTheme,
+            ),
+          ),
+          Container(
+            height: 32,
+            width: 1,
+            color: colorScheme.outlineVariant.withOpacity(0.4),
+          ),
+          Expanded(
+            child: _buildStatItem(
+              value: _followingCount.toString(),
+              label: 'Following',
+              colorScheme: colorScheme,
+              textTheme: textTheme,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required String value,
+    required String label,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: textTheme.titleLarge?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // About section with user details - cleaner chip layout
+  Widget _buildAboutSection(ColorScheme colorScheme, TextTheme textTheme) {
+    final infoItems = <Widget>[];
+    
+    if (_currentUser!.email.isNotEmpty) {
+      infoItems.add(_buildInfoChip(
+        icon: Icons.mail_outline_rounded,
+        label: 'Email',
+        value: _currentUser!.email,
+        colorScheme: colorScheme,
+        textTheme: textTheme,
+      ));
+    }
+    
+    if (_currentUser!.phone != null && _currentUser!.phone!.isNotEmpty) {
+      infoItems.add(_buildInfoChip(
+        icon: Icons.phone_outlined,
+        label: 'Phone',
+        value: _currentUser!.phone!,
+        colorScheme: colorScheme,
+        textTheme: textTheme,
+      ));
+    }
+    
+    if (_currentUser!.occupation != null && _currentUser!.occupation!.isNotEmpty) {
+      infoItems.add(_buildInfoChip(
+        icon: Icons.work_outline_rounded,
+        label: 'Occupation',
+        value: _currentUser!.occupation!,
+        colorScheme: colorScheme,
+        textTheme: textTheme,
+      ));
+    }
+    
+    if (_currentUser!.age != null) {
+      infoItems.add(_buildInfoChip(
+        icon: Icons.cake_outlined,
+        label: 'Age',
+        value: '${_currentUser!.age}',
+        colorScheme: colorScheme,
+        textTheme: textTheme,
+      ));
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: colorScheme.primary,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Details',
+                style: textTheme.titleSmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: infoItems,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withOpacity(0.4),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Quick actions section - compact buttons
+  Widget _buildQuickActions(ColorScheme colorScheme, TextTheme textTheme) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildCompactAction(
+            icon: Icons.receipt_long_rounded,
+            label: 'Expenses',
+            colorScheme: colorScheme,
+            textTheme: textTheme,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const UserExpensesScreen()),
+              );
+            },
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildCompactAction(
+            icon: Icons.logout_rounded,
+            label: 'Logout',
+            colorScheme: colorScheme,
+            textTheme: textTheme,
+            onTap: _showLogoutDialog,
+            isDestructive: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactAction({
+    required IconData icon,
+    required String label,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+    required VoidCallback onTap,
+    bool isDestructive = false,
+  }) {
+    final color = isDestructive ? colorScheme.error : colorScheme.primary;
+    
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: color.withOpacity(0.2),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -341,52 +765,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  Widget _buildFollowStatsRow() {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    Widget stat(String label, int value) {
-      return Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: colorScheme.outlineVariant),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                value.toString(),
-                style: textTheme.headlineSmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        stat('Followers', _followersCount),
-        const SizedBox(width: 12),
-        stat('Following', _followingCount),
-      ],
-    );
-  }
-
   String _formatDate(DateTime date) {
     final months = [
       'Jan',
@@ -405,58 +783,165 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     return '${months[date.month - 1]} ${date.year}';
   }
 
-  /// Modern header card showing avatar, name and bio
-  Widget _buildHeaderCard() {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.outlineVariant),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  // Skeleton loading for profile page
+  Widget _buildSkeletonLoading(ColorScheme colorScheme, double screenWidth, double screenHeight) {
+    return SingleChildScrollView(
+      child: Column(
         children: [
-          ProfileImageWidget(
-            imageUrl:
-                _currentUser!.profileImageUrl ??
-                _profileImageNotifier.currentImageId,
-            radius: 36,
-            placeholder: Icon(
-              Icons.person,
-              size: 36,
-              color: colorScheme.onSurfaceVariant,
+          // Hero section skeleton - use intrinsic height instead of fixed
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colorScheme.primary.withOpacity(0.3),
+                  colorScheme.primary.withOpacity(0.2),
+                  colorScheme.secondary.withOpacity(0.15),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // App bar skeleton
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildShimmerCircle(40, colorScheme),
+                          _buildShimmerCircle(40, colorScheme),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Profile image skeleton
+                    _buildShimmerCircle(96, colorScheme),
+                    
+                    const SizedBox(height: 12),
+                    
+                    // Name skeleton
+                    _buildShimmerBox(120, 20, colorScheme),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Bio skeleton
+                    _buildShimmerBox(160, 14, colorScheme),
+                    
+                    const SizedBox(height: 10),
+                    
+                    // Member badge skeleton
+                    _buildShimmerBox(110, 24, colorScheme, radius: 12),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
+          
+          // Content skeleton
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  _currentUser!.displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.headlineSmall?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
+                const SizedBox(height: 16),
+                
+                // Stats row skeleton
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            _buildShimmerBox(36, 24, colorScheme),
+                            const SizedBox(height: 6),
+                            _buildShimmerBox(56, 12, colorScheme),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        height: 28,
+                        width: 1,
+                        color: colorScheme.outlineVariant.withOpacity(0.3),
+                      ),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            _buildShimmerBox(36, 24, colorScheme),
+                            const SizedBox(height: 6),
+                            _buildShimmerBox(56, 12, colorScheme),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  _currentUser!.displayBio,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.titleSmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+                
+                const SizedBox(height: 16),
+                
+                // Details section skeleton
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          _buildShimmerBox(16, 16, colorScheme, radius: 4),
+                          const SizedBox(width: 8),
+                          _buildShimmerBox(50, 14, colorScheme),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Chips skeleton - use smaller fixed widths
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          _buildShimmerBox(120, 36, colorScheme, radius: 8),
+                          _buildShimmerBox(90, 36, colorScheme, radius: 8),
+                          _buildShimmerBox(80, 36, colorScheme, radius: 8),
+                          _buildShimmerBox(60, 36, colorScheme, radius: 8),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
+                
+                const SizedBox(height: 14),
+                
+                // Action buttons skeleton
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildShimmerBox(double.infinity, 44, colorScheme, radius: 12),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildShimmerBox(double.infinity, 44, colorScheme, radius: 12),
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -465,207 +950,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  /// Compact details card with dense rows and dividers
-  Widget _buildDetailsCard() {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    List<Widget> rows = [];
-
-    void addRow({
-      required IconData icon,
-      required String title,
-      required String value,
-      bool addDivider = true,
-    }) {
-      rows.add(
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
-            const SizedBox(width: 10),
-            Text(
-              '$title:',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.titleSmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-      if (addDivider) {
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Divider(height: 1, color: colorScheme.outlineVariant),
-          ),
-        );
-      }
-    }
-
-    addRow(
-      icon: Icons.email_outlined,
-      title: 'Email',
-      value: _currentUser!.email,
-    );
-
-    if (_currentUser!.phone != null && _currentUser!.phone!.isNotEmpty) {
-      addRow(
-        icon: Icons.phone_outlined,
-        title: 'Phone',
-        value: _currentUser!.phone!,
-      );
-    }
-
-    if (_currentUser!.occupation != null && _currentUser!.occupation!.isNotEmpty) {
-      addRow(
-        icon: Icons.work_outline,
-        title: 'Occupation',
-        value: _currentUser!.occupation!,
-      );
-    }
-
-    if (_currentUser!.age != null) {
-      // Skip full-width row; will include in compact row below
-    }
-
-    if (_currentUser!.createdAt != null) {
-      // Skip full-width row; will include in compact row below
-    }
-
-    // Add Age and Member Since as standard rows (no extra containers)
-    if (_currentUser!.age != null) {
-      addRow(
-        icon: Icons.cake_outlined,
-        title: 'Age',
-        value: '${_currentUser!.age}',
-      );
-    }
-
-    if (_currentUser!.createdAt != null) {
-      addRow(
-        icon: Icons.calendar_today_outlined,
-        title: 'Member Since',
-        value: _formatDate(_currentUser!.createdAt!),
-        addDivider: false,
-      );
-    } else {
-      // Remove trailing divider if last added had one
-      if (rows.isNotEmpty && rows.last is Padding) {
-        rows.removeLast();
-      }
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outlineVariant),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: rows,
-      ),
+  Widget _buildShimmerBox(double width, double height, ColorScheme colorScheme, {double radius = 6}) {
+    return _ShimmerBox(
+      width: width,
+      height: height,
+      radius: radius,
+      colorScheme: colorScheme,
     );
   }
 
-  Widget _buildActionTile({
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    required VoidCallback onTap,
-    bool isDestructive = false,
-  }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    final Color fg = isDestructive
-        ? colorScheme.error
-        : colorScheme.onSurface;
-    final Color iconBg = isDestructive
-        ? colorScheme.error.withValues(alpha: 0.12)
-        : colorScheme.primary.withValues(alpha: 0.12);
-    final Color iconColor = isDestructive
-        ? colorScheme.error
-        : colorScheme.primary;
-
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(24),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: colorScheme.outlineVariant),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Icon(icon, color: iconColor, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.titleMedium?.copyWith(
-                        color: fg,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Widget _buildShimmerCircle(double size, ColorScheme colorScheme) {
+    return _ShimmerCircle(size: size, colorScheme: colorScheme);
   }
 
   void _showLogoutDialog() {
@@ -724,6 +1019,120 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               child: Text('Logout', style: TextStyle(color: colorScheme.error)),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+// Shimmer box widget with repeating animation
+class _ShimmerBox extends StatefulWidget {
+  final double width;
+  final double height;
+  final double radius;
+  final ColorScheme colorScheme;
+
+  const _ShimmerBox({
+    required this.width,
+    required this.height,
+    required this.radius,
+    required this.colorScheme,
+  });
+
+  @override
+  State<_ShimmerBox> createState() => _ShimmerBoxState();
+}
+
+class _ShimmerBoxState extends State<_ShimmerBox>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.3, end: 0.6).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            color: widget.colorScheme.surfaceContainerHigh.withOpacity(_animation.value),
+            borderRadius: BorderRadius.circular(widget.radius),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Shimmer circle widget with repeating animation
+class _ShimmerCircle extends StatefulWidget {
+  final double size;
+  final ColorScheme colorScheme;
+
+  const _ShimmerCircle({
+    required this.size,
+    required this.colorScheme,
+  });
+
+  @override
+  State<_ShimmerCircle> createState() => _ShimmerCircleState();
+}
+
+class _ShimmerCircleState extends State<_ShimmerCircle>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.2, end: 0.5).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(_animation.value),
+            shape: BoxShape.circle,
+          ),
         );
       },
     );

@@ -194,11 +194,20 @@ class ChatService {
 
       // Create notification for receiver
       if (receiverId.isNotEmpty && !isSystemMessage && currentUser != null) {
+        // Create in-app notification
         await _notificationService.createChatNotification(
           userId: receiverId,
           senderName: senderName,
           message: messageModel.previewText(),
           extraData: {'chatId': chatId},
+        );
+        
+        // Send push notification for real-time device notification
+        await _notificationService.sendChatPushNotification(
+          receiverId: receiverId,
+          senderName: senderName,
+          messagePreview: messageModel.previewText(),
+          chatId: chatId,
         );
       }
 

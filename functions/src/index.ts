@@ -4,40 +4,135 @@ import * as admin from "firebase-admin";
 admin.initializeApp();
 
 /**
- * 🔔 NOTIFICATION TRIGGER 1: New Chat Message
+ * 🔔 NOTIFICATION TRIGGER: Process Push Notification Queue
  * 
- * Sends notification when a new message is created in any chat
+ * Sends push notification when a document is added to push_notifications collection
+ * This is triggered by the Flutter app when a message is sent
+ */
+export const onPushNotificationCreated = functions.firestore
+  .document("push_notifications/{notificationId}")
+  .onCreate(async (snapshot, context) => {
+    const notificationData = snapshot.data();
+
+    if (!notificationData) {
+      console.log("No notification data found");
+      return null;
+    }
+
+    // Skip if already processed
+    if (notificationData.processed === true) {
+      console.log("Notification already processed");
+      return null;
+    }
+
+    try {
+      const token = notificationData.token;
+      const notification = notificationData.notification || {};
+      const data = notificationData.data || {};
+
+      if (!token) {
+        console.log("No FCM token in notification request");
+        await snapshot.ref.update({ processed: true, error: "No token" });
+        return null;
+      }
+
+      // Send the push notification
+      const message = {
+        token: token,
+        notification: {
+          title: notification.title || "Roomie",
+          body: notification.body || "You have a new notification",
+        },
+        data: {
+          ...data,
+          click_action: "FLUTTER_NOTIFICATION_CLICK",
+        },
+        android: {
+          priority: "high" as const,
+          notification: {
+            channelId: "high_importance_channel",
+            priority: "high" as const,
+            sound: "default",
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: {
+                title: notification.title || "Roomie",
+                body: notification.body || "You have a new notification",
+              },
+              badge: 1,
+              sound: "default",
+            },
+          },
+        },
+      };
+
+      const response = await admin.messaging().send(message);
+      console.log(`✅ Push notification sent successfully: ${response}`);
+
+      // Mark as processed
+      await snapshot.ref.update({ 
+        processed: true, 
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        messageId: response,
+      });
+
+      return null;
+    } catch (error: unknown) {
+      console.error("Error sending push notification:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await snapshot.ref.update({ 
+        processed: true, 
+        error: errorMessage,
+      });
+      return null;
+    }
+  });
+
+/**
+ * 🔔 NOTIFICATION TRIGGER: New Chat Message (Realtime Database)
+ * 
+ * Sends push notification when a new message is created in any chat
+ * - Triggers from Realtime Database (where chat messages are stored)
  * - Excludes sender from notification
  * - Only notifies participants with FCM tokens
  * - Deep-links to /chat/{chatId}
  */
-export const onNewChatMessage = functions.firestore
-  .document("chats/{chatId}/messages/{messageId}")
+export const onNewChatMessage = functions.database
+  .ref("chats/{chatId}/messages/{messageId}")
   .onCreate(async (snapshot, context) => {
     const chatId = context.params.chatId;
-    const messageData = snapshot.data();
+    const messageData = snapshot.val();
+
+    if (!messageData) {
+      console.log("No message data found");
+      return null;
+    }
+
+    // Skip system messages
+    if (messageData.isSystemMessage === true || messageData.senderId === "system") {
+      console.log("Skipping system message");
+      return null;
+    }
 
     try {
-      // Get sender info
       const senderId = messageData.senderId;
-      const senderDoc = await admin.firestore()
-        .collection("users")
-        .doc(senderId)
-        .get();
-      const senderName = senderDoc.data()?.name || "Someone";
+      const senderName = messageData.senderName || "Someone";
 
-      // Get chat participants
-      const chatDoc = await admin.firestore()
-        .collection("chats")
-        .doc(chatId)
-        .get();
+      // Get chat data from Realtime Database to find participants
+      const chatSnapshot = await admin.database()
+        .ref(`chats/${chatId}`)
+        .once("value");
       
-      if (!chatDoc.exists) {
+      const chatData = chatSnapshot.val();
+      if (!chatData) {
         console.log("Chat not found:", chatId);
         return null;
       }
 
-      const participants = chatDoc.data()?.participants || [];
+      const participants: string[] = chatData.participants || [];
       
       // Get FCM tokens of recipients (exclude sender)
       const recipients = participants.filter((id: string) => id !== senderId);
@@ -47,6 +142,7 @@ export const onNewChatMessage = functions.firestore
         return null;
       }
 
+      // Fetch FCM tokens from Firestore users collection
       const tokensPromises = recipients.map(async (userId: string) => {
         const userDoc = await admin.firestore()
           .collection("users")
@@ -63,16 +159,29 @@ export const onNewChatMessage = functions.firestore
         return null;
       }
 
-      // Prepare notification payload
+      // Prepare notification payload based on message type
       let messagePreview = "";
-      if (messageData.type === "text") {
-        messagePreview = messageData.text || "New message";
-      } else if (messageData.type === "image") {
+      const msgType = messageData.type || "text";
+      
+      if (msgType === "text") {
+        messagePreview = messageData.message || "New message";
+        // Truncate long messages
+        if (messagePreview.length > 100) {
+          messagePreview = messagePreview.substring(0, 97) + "...";
+        }
+      } else if (msgType === "image") {
         messagePreview = "📷 Photo";
-      } else if (messageData.type === "voice") {
+      } else if (msgType === "voice") {
         messagePreview = "🎤 Voice message";
-      } else if (messageData.type === "poll") {
+      } else if (msgType === "poll") {
         messagePreview = "📊 Poll";
+      } else if (msgType === "paymentRequest") {
+        const amount = messageData.extraData?.amount || "";
+        messagePreview = `💰 Payment request: ₹${amount}`;
+      } else if (msgType === "todo") {
+        messagePreview = "✅ Todo list";
+      } else if (msgType === "file") {
+        messagePreview = "📎 File";
       } else {
         messagePreview = "New message";
       }
@@ -86,6 +195,8 @@ export const onNewChatMessage = functions.firestore
         route: `/chat/${chatId}`,
         chatId: chatId,
         senderId: senderId,
+        type: "chat_message",
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
       };
 
       // Send notification to all recipients
@@ -98,6 +209,19 @@ export const onNewChatMessage = functions.firestore
           notification: {
             channelId: "high_importance_channel",
             priority: "high" as const,
+            sound: "default",
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: {
+                title: senderName,
+                body: messagePreview,
+              },
+              badge: 1,
+              sound: "default",
+            },
           },
         },
       };
@@ -107,6 +231,11 @@ export const onNewChatMessage = functions.firestore
       console.log(`✅ Sent ${response.successCount} notifications for chat ${chatId}`);
       if (response.failureCount > 0) {
         console.log(`❌ Failed to send ${response.failureCount} notifications`);
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            console.log(`Token ${idx} failed:`, resp.error?.message);
+          }
+        });
       }
 
       return null;
