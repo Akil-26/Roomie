@@ -6,6 +6,7 @@ import 'package:roomie/data/datasources/profile_image_notifier.dart';
 
 /// Displays a profile image from a Cloudinary URL (or placeholder).
 /// Listens to global ProfileImageNotifier for updates.
+/// Uses cacheWidth/cacheHeight for memory optimization.
 class ProfileImageWidget extends StatefulWidget {
   final String? imageUrl;
   final double radius;
@@ -60,12 +61,20 @@ class _ProfileImageWidgetState extends State<ProfileImageWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Calculate cache size based on device pixel ratio for memory efficiency
+    final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+    final cacheSize = (widget.radius * 2 * devicePixelRatio).toInt();
+
     // Show immediate local preview if provided (editing state)
     if (widget.localPreviewFile != null && !kIsWeb) {
       return CircleAvatar(
         radius: widget.radius,
         backgroundColor: Theme.of(context).colorScheme.surface,
-        backgroundImage: FileImage(widget.localPreviewFile!),
+        backgroundImage: ResizeImage(
+          FileImage(widget.localPreviewFile!),
+          width: cacheSize,
+          height: cacheSize,
+        ),
       );
     }
 
@@ -80,6 +89,8 @@ class _ProfileImageWidgetState extends State<ProfileImageWidget> {
           width: widget.radius * 2,
           height: widget.radius * 2,
           fit: BoxFit.cover,
+          cacheWidth: cacheSize,
+          cacheHeight: cacheSize,
           placeholder: CircleAvatar(
             radius: widget.radius,
             backgroundColor: Theme.of(context).colorScheme.surface,

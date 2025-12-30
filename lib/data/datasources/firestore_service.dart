@@ -2,10 +2,49 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:roomie/data/datasources/profile_image_service.dart';
 import 'package:roomie/data/datasources/profile_image_notifier.dart';
 
+/// Singleton service for Firestore operations with caching
 class FirestoreService {
+  // Singleton pattern for efficient resource usage
+  static final FirestoreService _instance = FirestoreService._internal();
+  factory FirestoreService() => _instance;
+  FirestoreService._internal();
+
   final _firestore = FirebaseFirestore.instance;
   final _profileImageService = ProfileImageService();
   final _profileImageNotifier = ProfileImageNotifier();
+
+  // In-memory cache for user data (reduces Firestore reads)
+  final Map<String, Map<String, dynamic>> _userCache = {};
+  final Map<String, DateTime> _userCacheTimestamps = {};
+  static const Duration _cacheExpiry = Duration(minutes: 5);
+
+  /// Clear cached user data (call on logout)
+  void clearCache() {
+    _userCache.clear();
+    _userCacheTimestamps.clear();
+  }
+
+  /// Get cached user or fetch from Firestore
+  Future<Map<String, dynamic>?> getCachedUser(String userId) async {
+    final now = DateTime.now();
+    final cachedTime = _userCacheTimestamps[userId];
+    
+    if (cachedTime != null && now.difference(cachedTime) < _cacheExpiry) {
+      return _userCache[userId];
+    }
+    
+    try {
+      final doc = await _firestore.collection('users').doc(userId).get();
+      if (doc.exists && doc.data() != null) {
+        _userCache[userId] = doc.data()!;
+        _userCacheTimestamps[userId] = now;
+        return doc.data();
+      }
+    } catch (e) {
+      print('Error fetching user $userId: $e');
+    }
+    return null;
+  }
 
   // Get profile image (now just returns URL if already a URL)
   Future<String?> getProfileImage(String imageUrlOrId) async {
@@ -43,6 +82,10 @@ class FirestoreService {
     }
 
     await docRef.set(userData, SetOptions(merge: true));
+    
+    // Invalidate cache after update
+    _userCache.remove(uid);
+    _userCacheTimestamps.remove(uid);
   }
 
   /// Save user profile with username, bio, and profile image

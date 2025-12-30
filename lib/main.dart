@@ -187,7 +187,17 @@ class MyApp extends StatelessWidget {
       navigatorKey: navigatorKey,
       title: 'Roomie',
       debugShowCheckedModeBanner: false,
+      // Performance: Disable unnecessary animations in debug mode
+      debugShowMaterialGrid: false,
       initialRoute: '/',
+      // Performance: Use builder for global optimizations
+      builder: (context, child) {
+        // Disable overscroll glow effect for cleaner UI
+        return ScrollConfiguration(
+          behavior: _NoOverscrollBehavior(),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       onGenerateRoute: (settings) {
         // Handle deep-link routes with parameters
         if (settings.name?.startsWith('/chat/') == true) {
@@ -195,7 +205,7 @@ class MyApp extends StatelessWidget {
           return MaterialPageRoute(
             builder: (context) => ChatScreen(
               chatData: {'id': chatId},
-              chatType: 'individual', // Will be determined from chatId
+              chatType: 'individual',
             ),
           );
         }
@@ -212,5 +222,17 @@ class MyApp extends StatelessWidget {
       darkTheme: AppThemes.darkTheme,
       themeMode: ThemeMode.system,
     );
+  }
+}
+
+/// Custom scroll behavior to remove overscroll glow effect
+class _NoOverscrollBehavior extends ScrollBehavior {
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child; // No overscroll indicator
   }
 }

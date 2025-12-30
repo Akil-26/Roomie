@@ -7,12 +7,29 @@ import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
 
+/// Singleton service for group operations with caching
 class GroupsService {
+  // Singleton pattern
+  static final GroupsService _instance = GroupsService._internal();
+  factory GroupsService() => _instance;
+  GroupsService._internal();
+
   final _firestore = FirebaseFirestore.instance;
   final _realtimeDB = FirebaseDatabase.instance;
   final _cloudinary = CloudinaryService();
   final _notificationService = NotificationService();
   static const String _collection = 'groups';
+
+  // Cache for current user's group
+  Map<String, dynamic>? _currentGroupCache;
+  DateTime? _currentGroupCacheTime;
+  static const Duration _cacheExpiry = Duration(minutes: 2);
+
+  /// Clear cache (call on logout or group change)
+  void clearCache() {
+    _currentGroupCache = null;
+    _currentGroupCacheTime = null;
+  }
 
   Future<String?> createGroup({
     required String name,
@@ -117,6 +134,9 @@ class GroupsService {
     await docRef.set(data);
     await _updateGroupChatMembers(docRef.id);
 
+    // Invalidate cache after creating group
+    clearCache();
+
     print('Group created successfully: ${docRef.id} for user: ${user.uid}');
     print('Group data: $data');
     return docRef.id;
@@ -132,12 +152,21 @@ class GroupsService {
     return snapshot.docs.map((d) => d.data()).toList();
   }
 
-  // Get current user's group (created or joined)
-  Future<Map<String, dynamic>?> getCurrentUserGroup() async {
+  // Get current user's group (created or joined) with caching
+  Future<Map<String, dynamic>?> getCurrentUserGroup({bool forceRefresh = false}) async {
     final user = AuthService().currentUser;
     if (user == null) {
       print('No user authenticated for getCurrentUserGroup');
       return null;
+    }
+
+    // Return cached data if valid and not forcing refresh
+    if (!forceRefresh && 
+        _currentGroupCache != null && 
+        _currentGroupCacheTime != null &&
+        DateTime.now().difference(_currentGroupCacheTime!) < _cacheExpiry) {
+      print('Returning cached current group');
+      return _currentGroupCache;
     }
 
     print('Getting current group for user: ${user.uid}');
@@ -154,10 +183,16 @@ class GroupsService {
 
     if (snapshot.docs.isNotEmpty) {
       final groupData = snapshot.docs.first.data();
+      // Update cache
+      _currentGroupCache = groupData;
+      _currentGroupCacheTime = DateTime.now();
       print('Current user group: ${groupData['name']} (${groupData['id']})');
       return groupData;
     }
 
+    // Cache the null result too
+    _currentGroupCache = null;
+    _currentGroupCacheTime = DateTime.now();
     print('No current group found for user');
     return null;
   }

@@ -7,11 +7,33 @@ import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/cloudinary_service.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
 
+/// Singleton chat service with optimized stream caching
 class ChatService {
+  // Singleton pattern
+  static final ChatService _instance = ChatService._internal();
+  factory ChatService() => _instance;
+  ChatService._internal();
+
   final FirebaseDatabase _database = FirebaseDatabase.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
-  final CloudinaryService _cloudinary = CloudinaryService();  final NotificationService _notificationService = NotificationService();
+  final CloudinaryService _cloudinary = CloudinaryService();
+  final NotificationService _notificationService = NotificationService();
+
+  // Stream cache to prevent duplicate listeners
+  final Map<String, Stream<List<MessageModel>>> _messageStreamCache = {};
+  final Map<String, Stream<List<MessageModel>>> _groupMessageStreamCache = {};
+  Stream<List<ChatModel>>? _userChatsStreamCache;
+  String? _lastUserId;
+
+  /// Clear cached streams (call on logout)
+  void clearStreamCache() {
+    _messageStreamCache.clear();
+    _groupMessageStreamCache.clear();
+    _userChatsStreamCache = null;
+    _lastUserId = null;
+  }
+
   Future<String> uploadChatFile({
     required Uint8List bytes,
     required String fileName,
@@ -219,9 +241,15 @@ class ChatService {
     }
   }
 
-  /// Get messages stream for a chat
+  /// Get messages stream for a chat (cached to prevent duplicate listeners)
   Stream<List<MessageModel>> getMessagesStream(String chatId) {
-    return _database
+    // Return cached stream if available
+    if (_messageStreamCache.containsKey(chatId)) {
+      return _messageStreamCache[chatId]!;
+    }
+
+    // Create and cache new stream
+    final stream = _database
         .ref('chats/$chatId/messages')
         .orderByChild('timestamp')
         .onValue
@@ -241,15 +269,25 @@ class ChatService {
           // Sort by timestamp ascending (oldest first for chat display)
           messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
           return messages;
-        });
+        })
+        .asBroadcastStream(); // Allow multiple listeners
+
+    _messageStreamCache[chatId] = stream;
+    return stream;
   }
 
-  /// Get user's chats stream
+  /// Get user's chats stream (cached)
   Stream<List<ChatModel>> getUserChatsStream() {
     final currentUser = _authService.currentUser;
     if (currentUser == null) return Stream.value([]);
 
-    return _database.ref('chats').onValue.map((event) {
+    // Return cached stream if user hasn't changed
+    if (_userChatsStreamCache != null && _lastUserId == currentUser.uid) {
+      return _userChatsStreamCache!;
+    }
+
+    _lastUserId = currentUser.uid;
+    _userChatsStreamCache = _database.ref('chats').onValue.map((event) {
       final data = event.snapshot.value;
       if (data == null) return <ChatModel>[];
 
@@ -276,7 +314,9 @@ class ChatService {
       });
 
       return chats;
-    });
+    }).asBroadcastStream();
+
+    return _userChatsStreamCache!;
   }
 
   /// Mark messages as read
