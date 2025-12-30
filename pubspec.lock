@@ -764,10 +764,10 @@ packages:
     dependency: transitive
     description:
       name: image
-      sha256: "4e973fcf4caae1a4be2fa0a13157aa38a8f9cb049db6529aa00b4d71abc4d928"
+      sha256: "492bd52f6c4fbb6ee41f781ff27765ce5f627910e1e0cbecfa3d9add5562604c"
       url: "https://pub.dev"
     source: hosted
-    version: "4.5.4"
+    version: "4.7.2"
   image_picker:
     dependency: "direct main"
     description:
@@ -1140,18 +1140,18 @@ packages:
     dependency: transitive
     description:
       name: record_android
-      sha256: f05677eeed074898327f890f232f9eb49cd99d1c20d0daaf22b5612f4b2301bb
+      sha256: "9aaf3f151e61399b09bd7c31eb5f78253d2962b3f57af019ac5a2d1a3afdcf71"
       url: "https://pub.dev"
     source: hosted
-    version: "1.4.3"
+    version: "1.4.5"
   record_ios:
     dependency: transitive
     description:
       name: record_ios
-      sha256: "765b42ac1be019b1674ddd809b811fc721fe5a93f7bb1da7803f0d16772fd6d7"
+      sha256: "69fcd37c6185834e90254573599a9165db18a2cbfa266b6d1e46ffffeb06a28c"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.4"
+    version: "1.1.5"
   record_linux:
     dependency: transitive
     description:
@@ -1180,10 +1180,10 @@ packages:
     dependency: transitive
     description:
       name: record_web
-      sha256: "4f0adf20c9ccafcc02d71111fd91fba1ca7b17a7453902593e5a9b25b74a5c56"
+      sha256: "3feeffbc0913af3021da9810bb8702a068db6bc9da52dde1d19b6ee7cb9edb51"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.0"
+    version: "1.2.2"
   record_windows:
     dependency: transitive
     description:
