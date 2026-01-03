@@ -86,17 +86,16 @@ class ChatService {
         // Create new chat - fetch current user's username from Firestore
         String currentUserDisplayName = 'You';
         try {
-          final currentUserDoc = await _firestore
-              .collection('users')
-              .doc(currentUser.uid)
-              .get();
-          
+          final currentUserDoc =
+              await _firestore.collection('users').doc(currentUser.uid).get();
+
           if (currentUserDoc.exists && currentUserDoc.data() != null) {
             final currentUserData = currentUserDoc.data()!;
-            currentUserDisplayName = currentUserData['username'] as String? ??
-                                    currentUserData['name'] as String? ??
-                                    currentUser.email?.split('@')[0] ?? 
-                                    'You';
+            currentUserDisplayName =
+                currentUserData['username'] as String? ??
+                currentUserData['name'] as String? ??
+                currentUser.email?.split('@')[0] ??
+                'You';
           }
         } catch (e) {
           debugPrint('Error loading current user data: $e');
@@ -135,6 +134,7 @@ class ChatService {
     List<MessageAttachment> attachments = const [],
     PollData? poll,
     TodoData? todo,
+    PaymentRequestData? paymentRequest,
     Map<String, dynamic>? extraData,
     bool isSystemMessage = false,
   }) async {
@@ -193,6 +193,7 @@ class ChatService {
         attachments: attachments,
         poll: poll,
         todo: todo,
+        paymentRequest: paymentRequest,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
         seenBy:
@@ -223,7 +224,7 @@ class ChatService {
           message: messageModel.previewText(),
           extraData: {'chatId': chatId},
         );
-        
+
         // Send push notification for real-time device notification
         await _notificationService.sendChatPushNotification(
           receiverId: receiverId,
@@ -249,28 +250,29 @@ class ChatService {
     }
 
     // Create and cache new stream
-    final stream = _database
-        .ref('chats/$chatId/messages')
-        .orderByChild('timestamp')
-        .onValue
-        .map((event) {
-          final data = event.snapshot.value;
-          if (data == null) return <MessageModel>[];
+    final stream =
+        _database
+            .ref('chats/$chatId/messages')
+            .orderByChild('timestamp')
+            .onValue
+            .map((event) {
+              final data = event.snapshot.value;
+              if (data == null) return <MessageModel>[];
 
-          final messagesMap = Map<String, dynamic>.from(data as Map);
-          final messages =
-              messagesMap.entries.map((entry) {
-                final messageData = Map<String, dynamic>.from(
-                  entry.value as Map,
-                );
-                return MessageModel.fromMap(messageData, entry.key);
-              }).toList();
+              final messagesMap = Map<String, dynamic>.from(data as Map);
+              final messages =
+                  messagesMap.entries.map((entry) {
+                    final messageData = Map<String, dynamic>.from(
+                      entry.value as Map,
+                    );
+                    return MessageModel.fromMap(messageData, entry.key);
+                  }).toList();
 
-          // Sort by timestamp ascending (oldest first for chat display)
-          messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-          return messages;
-        })
-        .asBroadcastStream(); // Allow multiple listeners
+              // Sort by timestamp ascending (oldest first for chat display)
+              messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+              return messages;
+            })
+            .asBroadcastStream(); // Allow multiple listeners
 
     _messageStreamCache[chatId] = stream;
     return stream;
@@ -287,34 +289,35 @@ class ChatService {
     }
 
     _lastUserId = currentUser.uid;
-    _userChatsStreamCache = _database.ref('chats').onValue.map((event) {
-      final data = event.snapshot.value;
-      if (data == null) return <ChatModel>[];
+    _userChatsStreamCache =
+        _database.ref('chats').onValue.map((event) {
+          final data = event.snapshot.value;
+          if (data == null) return <ChatModel>[];
 
-      final chatsMap = Map<String, dynamic>.from(data as Map);
-      final chats = <ChatModel>[];
+          final chatsMap = Map<String, dynamic>.from(data as Map);
+          final chats = <ChatModel>[];
 
-      for (final entry in chatsMap.entries) {
-        final chatData = Map<String, dynamic>.from(entry.value as Map);
-        final chat = ChatModel.fromMap(chatData, entry.key);
+          for (final entry in chatsMap.entries) {
+            final chatData = Map<String, dynamic>.from(entry.value as Map);
+            final chat = ChatModel.fromMap(chatData, entry.key);
 
-        // Only include chats where current user is a participant
-        if (chat.participants.contains(currentUser.uid)) {
-          chats.add(chat);
-        }
-      }
+            // Only include chats where current user is a participant
+            if (chat.participants.contains(currentUser.uid)) {
+              chats.add(chat);
+            }
+          }
 
-      // Sort by last message time descending
-      chats.sort((a, b) {
-        final aTime =
-            a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final bTime =
-            b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-        return bTime.compareTo(aTime);
-      });
+          // Sort by last message time descending
+          chats.sort((a, b) {
+            final aTime =
+                a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime =
+                b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bTime.compareTo(aTime);
+          });
 
-      return chats;
-    }).asBroadcastStream();
+          return chats;
+        }).asBroadcastStream();
 
     return _userChatsStreamCache!;
   }
@@ -515,15 +518,8 @@ class ChatService {
     List<MessageAttachment> attachments = const [],
     PollData? poll,
     TodoData? todo,
+    PaymentRequestData? paymentRequest,
     Map<String, dynamic>? extraData,
-    String? paymentRequestId,
-    double? paymentAmount,
-    String? paymentCurrency,
-    List<String>? payToUserIds,
-    String? paymentNote,
-    String? paymentUpiId,
-    String? payToPhoneNumber,
-    Map<String, String>? paymentStatus,
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -556,6 +552,7 @@ class ChatService {
         attachments: attachments,
         poll: poll,
         todo: todo,
+        paymentRequest: paymentRequest,
         extraData: extraData ?? {},
         isSystemMessage: isSystemMessage,
         seenBy:
@@ -898,51 +895,90 @@ class ChatService {
   }
 
   /// Update payment status for a specific user in a payment request message
-  Future<void> updateMessagePaymentStatus({
-    required String chatId,
+  Future<void> updatePaymentRequestStatus({
+    required String containerId,
     required String messageId,
-    required String userId,
-    required String status, // "PAID" or "PENDING"
+    required String odId,
+    required PaymentStatus newStatus,
     required bool isGroupChat,
   }) async {
     try {
       final currentUser = _authService.currentUser;
       if (currentUser == null) throw Exception('User not authenticated');
 
-      final path = isGroupChat
-          ? 'groupChats/$chatId/messages/$messageId'
-          : 'chats/$chatId/messages/$messageId';
+      final path =
+          isGroupChat
+              ? 'groupChats/$containerId/messages/$messageId'
+              : 'chats/$containerId/messages/$messageId';
 
       final messageRef = _database.ref(path);
       final snapshot = await messageRef.get();
-      
+
       if (!snapshot.exists) {
         throw Exception('Message not found');
       }
 
       final rawData = Map<String, dynamic>.from(snapshot.value as Map);
-      final paymentStatus = Map<String, String>.from(
-        rawData['paymentStatus'] as Map? ?? {},
+
+      // Parse existing payment request data
+      final paymentRequestMap = rawData['paymentRequest'] as Map?;
+      if (paymentRequestMap == null) {
+        throw Exception('Payment request not found in message');
+      }
+
+      final participantsList = List<Map<String, dynamic>>.from(
+        (paymentRequestMap['participants'] as List?)?.map(
+              (e) => Map<String, dynamic>.from(e as Map),
+            ) ??
+            [],
       );
 
-      // Update status for this user
-      paymentStatus[userId] = status;
+      // Find and update the participant
+      bool found = false;
+      for (int i = 0; i < participantsList.length; i++) {
+        if (participantsList[i]['userId'] == odId) {
+          participantsList[i]['status'] = newStatus.name;
+          if (newStatus == PaymentStatus.paid) {
+            participantsList[i]['paidAt'] =
+                DateTime.now().millisecondsSinceEpoch;
+          }
+          found = true;
+          break;
+        }
+      }
 
-      // Check if all users have paid
-      final allPaid = _checkAllUsersPaid(paymentStatus);
+      if (!found) {
+        throw Exception('Participant not found in payment request');
+      }
 
-      // Update both status and completion flag
-      final updates = <String, dynamic>{
-        'paymentStatus': paymentStatus,
-        'isPaymentCompleted': allPaid,
-      };
+      // Update the message with new participants list
+      await messageRef.update({
+        'paymentRequest/participants': participantsList,
+      });
 
-      await messageRef.update(updates);
+      debugPrint('✅ Updated payment status: $odId -> ${newStatus.name}');
 
-      if (allPaid) {
-        debugPrint('🎉 Payment request completed! All users paid.');
-      } else {
-        debugPrint('✅ Updated payment status: $userId -> $status');
+      // Send notification to payment requester
+      final senderId = rawData['senderId'] as String?;
+      if (senderId != null &&
+          senderId != currentUser.uid &&
+          newStatus == PaymentStatus.paid) {
+        final participant = participantsList.firstWhere(
+          (p) => p['userId'] == odId,
+          orElse: () => {},
+        );
+        final amount = (participant['amount'] as num?)?.toDouble() ?? 0;
+
+        await _notificationService.createPaymentNotification(
+          userId: senderId,
+          status: 'SUCCESS',
+          amount: amount.toInt(),
+          extraData: {
+            'messageId': messageId,
+            'chatId': containerId,
+            'payerId': odId,
+          },
+        );
       }
     } catch (e) {
       debugPrint('❌ Error updating payment status: $e');
@@ -950,16 +986,21 @@ class ChatService {
     }
   }
 
-  /// Check if all users in the payment request have paid
-  bool _checkAllUsersPaid(Map<String, String> paymentStatus) {
-    if (paymentStatus.isEmpty) return false;
-    
-    for (final status in paymentStatus.values) {
-      if (status != 'PAID') {
-        return false;
-      }
-    }
-    
-    return true;
+  /// Legacy method - Update payment status for a specific user in a payment request message
+  @Deprecated('Use updatePaymentRequestStatus instead')
+  Future<void> updateMessagePaymentStatus({
+    required String chatId,
+    required String messageId,
+    required String odId,
+    required String status, // "PAID" or "PENDING"
+    required bool isGroupChat,
+  }) async {
+    await updatePaymentRequestStatus(
+      containerId: chatId,
+      messageId: messageId,
+      odId: odId,
+      newStatus: status == 'PAID' ? PaymentStatus.paid : PaymentStatus.pending,
+      isGroupChat: isGroupChat,
+    );
   }
 }

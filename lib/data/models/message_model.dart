@@ -18,9 +18,21 @@ List<dynamic> _safeListFromMap(dynamic value) {
   return [];
 }
 
-enum MessageType { text, image, file, audio, voice, poll, todo, system }
+enum MessageType {
+  text,
+  image,
+  file,
+  audio,
+  voice,
+  poll,
+  todo,
+  paymentRequest,
+  system,
+}
 
 enum MessageStatus { sending, sent, delivered, read }
+
+enum PaymentStatus { pending, paid, declined, cancelled }
 
 enum AttachmentType { image, audio, voice, document, video, other }
 
@@ -271,6 +283,153 @@ class TodoData {
   }
 }
 
+/// Payment request participant with their payment status
+class PaymentParticipant {
+  final String odId;
+  final String name;
+  final double amount;
+  final PaymentStatus status;
+  final DateTime? paidAt;
+
+  const PaymentParticipant({
+    required this.odId,
+    required this.name,
+    required this.amount,
+    this.status = PaymentStatus.pending,
+    this.paidAt,
+  });
+
+  factory PaymentParticipant.fromMap(Map<String, dynamic> map) {
+    final statusString =
+        map['status']?.toString() ?? PaymentStatus.pending.name;
+    return PaymentParticipant(
+      odId: map['userId']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      amount: (map['amount'] as num?)?.toDouble() ?? 0.0,
+      status:
+          PaymentStatus.values.firstWhereOrNull(
+            (s) => s.name == statusString,
+          ) ??
+          PaymentStatus.pending,
+      paidAt:
+          map['paidAt'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(map['paidAt'] as int)
+              : null,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'userId': odId,
+      'name': name,
+      'amount': amount,
+      'status': status.name,
+      if (paidAt != null) 'paidAt': paidAt!.millisecondsSinceEpoch,
+    };
+  }
+
+  PaymentParticipant copyWith({
+    String? odId,
+    String? name,
+    double? amount,
+    PaymentStatus? status,
+    DateTime? paidAt,
+  }) {
+    return PaymentParticipant(
+      odId: odId ?? this.odId,
+      name: name ?? this.name,
+      amount: amount ?? this.amount,
+      status: status ?? this.status,
+      paidAt: paidAt ?? this.paidAt,
+    );
+  }
+}
+
+/// Payment request data for group/individual chat payments
+class PaymentRequestData {
+  final String id;
+  final double totalAmount;
+  final String currency;
+  final String? note;
+  final String? upiId;
+  final String? phoneNumber;
+  final List<PaymentParticipant> participants;
+  final DateTime createdAt;
+
+  const PaymentRequestData({
+    required this.id,
+    required this.totalAmount,
+    this.currency = 'INR',
+    this.note,
+    this.upiId,
+    this.phoneNumber,
+    this.participants = const [],
+    required this.createdAt,
+  });
+
+  factory PaymentRequestData.fromMap(Map<String, dynamic> map) {
+    final participantsData = _safeListFromMap(map['participants']);
+    return PaymentRequestData(
+      id: map['id']?.toString() ?? '',
+      totalAmount: (map['totalAmount'] as num?)?.toDouble() ?? 0.0,
+      currency: map['currency']?.toString() ?? 'INR',
+      note: map['note']?.toString(),
+      upiId: map['upiId']?.toString(),
+      phoneNumber: map['phoneNumber']?.toString(),
+      participants:
+          participantsData
+              .map((item) => PaymentParticipant.fromMap(_safeCastMap(item)))
+              .toList(),
+      createdAt:
+          map['createdAt'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'] as int)
+              : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'totalAmount': totalAmount,
+      'currency': currency,
+      if (note != null) 'note': note,
+      if (upiId != null) 'upiId': upiId,
+      if (phoneNumber != null) 'phoneNumber': phoneNumber,
+      'participants': participants.map((p) => p.toMap()).toList(),
+      'createdAt': createdAt.millisecondsSinceEpoch,
+    };
+  }
+
+  /// Get total amount paid
+  double get paidAmount {
+    return participants
+        .where((p) => p.status == PaymentStatus.paid)
+        .fold(0.0, (sum, p) => sum + p.amount);
+  }
+
+  /// Get total pending amount
+  double get pendingAmount => totalAmount - paidAmount;
+
+  /// Check if all participants have paid
+  bool get isFullyPaid => pendingAmount <= 0.01;
+
+  /// Get count of paid participants
+  int get paidCount =>
+      participants.where((p) => p.status == PaymentStatus.paid).length;
+
+  /// Get payment status for a specific user
+  PaymentStatus getStatusForUser(String odId) {
+    final participant = participants.firstWhereOrNull((p) => p.odId == odId);
+    return participant?.status ?? PaymentStatus.pending;
+  }
+
+  /// Get amount for a specific user
+  double getAmountForUser(String odId) {
+    final participant = participants.firstWhereOrNull((p) => p.odId == odId);
+    return participant?.amount ?? 0.0;
+  }
+}
+
 class MessageModel {
   final String id;
   final String senderId;
@@ -288,6 +447,7 @@ class MessageModel {
   final List<MessageAttachment> attachments;
   final PollData? poll;
   final TodoData? todo;
+  final PaymentRequestData? paymentRequest;
   final Map<String, dynamic> extraData;
   final bool isSystemMessage;
 
@@ -308,6 +468,7 @@ class MessageModel {
     this.attachments = const [],
     this.poll,
     this.todo,
+    this.paymentRequest,
     this.extraData = const {},
     this.isSystemMessage = false,
   });
@@ -370,6 +531,10 @@ class MessageModel {
           map['todo'] != null
               ? TodoData.fromMap(_safeCastMap(map['todo']))
               : null,
+      paymentRequest:
+          map['paymentRequest'] != null
+              ? PaymentRequestData.fromMap(_safeCastMap(map['paymentRequest']))
+              : null,
       extraData: _safeCastMap(map['extraData'] ?? const {}),
       isSystemMessage:
           map['isSystemMessage'] == true ||
@@ -400,6 +565,7 @@ class MessageModel {
             attachments.map((attachment) => attachment.toMap()).toList(),
       if (poll != null) 'poll': poll!.toMap(),
       if (todo != null) 'todo': todo!.toMap(),
+      if (paymentRequest != null) 'paymentRequest': paymentRequest!.toMap(),
       if (extraData.isNotEmpty) 'extraData': extraData,
       'isSystemMessage': isSystemMessage,
     };
@@ -422,6 +588,7 @@ class MessageModel {
     List<MessageAttachment>? attachments,
     PollData? poll,
     TodoData? todo,
+    PaymentRequestData? paymentRequest,
     Map<String, dynamic>? extraData,
     bool? isSystemMessage,
   }) {
@@ -442,6 +609,7 @@ class MessageModel {
       attachments: attachments ?? this.attachments,
       poll: poll ?? this.poll,
       todo: todo ?? this.todo,
+      paymentRequest: paymentRequest ?? this.paymentRequest,
       extraData: extraData ?? this.extraData,
       isSystemMessage: isSystemMessage ?? this.isSystemMessage,
     );
@@ -462,6 +630,15 @@ class MessageModel {
         return poll != null ? 'Poll: ${poll!.question}' : 'Poll';
       case MessageType.todo:
         return todo != null ? 'To-do: ${todo!.title}' : 'To-do list';
+      case MessageType.paymentRequest:
+        if (paymentRequest != null) {
+          final currency =
+              paymentRequest!.currency == 'INR'
+                  ? '₹'
+                  : paymentRequest!.currency;
+          return '💰 Payment Request: $currency${paymentRequest!.totalAmount.toStringAsFixed(0)}';
+        }
+        return '💰 Payment Request';
       case MessageType.system:
         return message;
       case MessageType.text:

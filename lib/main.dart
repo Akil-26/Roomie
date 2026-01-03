@@ -17,6 +17,8 @@ import 'package:roomie/core/core.dart';
 import 'package:roomie/core/logger.dart';
 import 'package:roomie/data/datasources/local_sms_transaction_store.dart';
 import 'package:roomie/data/datasources/sms_transaction_service.dart';
+import 'package:roomie/data/datasources/message_cache_service.dart';
+import 'package:roomie/data/datasources/user_cache_service.dart';
 
 // Global navigator key for notification deep-linking
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -153,6 +155,22 @@ void main() async {
     AppLogger.d('✅ Local SMS transaction store initialized');
   } catch (e) {
     AppLogger.e('❌ Local store init failed: $e');
+  }
+
+  // Initialize message cache for offline access
+  try {
+    await MessageCacheService().init();
+    AppLogger.d('✅ Message cache service initialized');
+  } catch (e) {
+    AppLogger.e('❌ Message cache init failed: $e');
+  }
+
+  // Initialize user cache for faster chat loading
+  try {
+    await UserCacheService().init();
+    AppLogger.d('✅ User cache service initialized');
+  } catch (e) {
+    AppLogger.e('❌ User cache init failed: $e');
   }
 
   // Configure SMS service for local-only, privacy-preserving storage

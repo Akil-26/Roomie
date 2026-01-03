@@ -15,13 +15,18 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/chat_service.dart';
+import 'package:roomie/data/datasources/message_cache_service.dart';
+import 'package:roomie/data/datasources/user_cache_service.dart';
 
 import 'package:roomie/data/models/message_model.dart';
 import 'package:roomie/presentation/widgets/chat_input_widget.dart';
 import 'package:roomie/presentation/widgets/roomie_loading_widget.dart';
 import 'package:roomie/presentation/widgets/poll_todo_dialogs.dart';
+import 'package:roomie/presentation/widgets/payment_request_dialog.dart';
+import 'package:roomie/presentation/widgets/payment_request_card.dart';
 import 'package:roomie/presentation/screens/groups/current_group_detail_s.dart';
 import 'package:roomie/presentation/screens/profile/other_user_profile_s.dart';
+import 'package:roomie/presentation/screens/chat/chat_payments_screen.dart';
 import 'package:uuid/uuid.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -58,6 +63,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isUploading = false;
   DateTime? _lastDeliverySync;
 
+  // Cached messages for offline access
+  List<MessageModel> _cachedMessages = [];
+  final MessageCacheService _cacheService = MessageCacheService();
+  final UserCacheService _userCacheService = UserCacheService();
+
   // Voice recording state
   bool _isRecording = false;
   Duration _recordDuration = Duration.zero;
@@ -69,9 +79,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   String? _currentPlayingAudioId;
   bool _isAudioPlaying = false;
 
+  // Smooth fade-in animation for chat content
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+  bool _isFirstLoad = true;
+
   @override
   void initState() {
     super.initState();
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeIn,
+    );
     _initializeChat();
   }
 
@@ -92,68 +115,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
         final groupName = data['name'] ?? data['groupName'] ?? 'Group chat';
         final members = List<String>.from(data['members'] ?? const <String>[]);
-        
-        // Fetch actual member names and images from Firestore
-        final memberNames = <String, String>{};
-        final memberImages = <String, String?>{};
-        
-        for (final memberId in members) {
-          try {
-            final userDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(memberId)
-                .get();
-            
-            if (userDoc.exists && userDoc.data() != null) {
-              final userData = userDoc.data()!;
-              // Try username first, then name, then email
-              final displayName = userData['username'] as String? ??
-                                 userData['name'] as String? ??
-                                 (userData['email'] as String?)?.split('@')[0] ??
-                                 'User';
-              memberNames[memberId] = displayName;
-              memberImages[memberId] = userData['profileImageUrl'] as String?;
-              debugPrint('Loaded member $memberId: $displayName');
-            }
-          } catch (e) {
-            debugPrint('Error loading member $memberId: $e');
-            memberNames[memberId] = 'User';
-          }
-        }
 
         // Ensure current user is in the list
         if (!members.contains(currentUser.uid)) {
           members.add(currentUser.uid);
         }
-        
-        // Set current user display name if not already set
-        if (memberNames[currentUser.uid] == null) {
-          // Fetch current user's username from Firestore instead of using Auth displayName
-          try {
-            final currentUserDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(currentUser.uid)
-                .get();
-            
-            if (currentUserDoc.exists && currentUserDoc.data() != null) {
-              final currentUserData = currentUserDoc.data()!;
-              memberNames[currentUser.uid] = currentUserData['username'] as String? ??
-                                             currentUserData['name'] as String? ??
-                                             currentUser.email?.split('@')[0] ?? 
-                                             'You';
-            } else {
-              memberNames[currentUser.uid] = currentUser.email?.split('@')[0] ?? 'You';
+
+        // FAST PATH: Load from cache first for instant display
+        final memberNames = <String, String>{};
+        final memberImages = <String, String?>{};
+        final usersToFetch = <String>[];
+        int cachedCount = 0;
+
+        for (final memberId in members) {
+          final cachedUser = _userCacheService.getCachedUser(memberId);
+          if (cachedUser != null) {
+            memberNames[memberId] = cachedUser.displayName;
+            memberImages[memberId] = cachedUser.profileImageUrl;
+            cachedCount++;
+            // Check if cache is stale (older than 24 hours)
+            if (_userCacheService.isUserStale(memberId)) {
+              usersToFetch.add(memberId);
             }
-          } catch (e) {
-            debugPrint('Error loading current user data: $e');
-            memberNames[currentUser.uid] = currentUser.email?.split('@')[0] ?? 'You';
+          } else {
+            memberNames[memberId] = 'User';
+            usersToFetch.add(memberId);
           }
         }
+        
+        debugPrint('👥 User cache: $cachedCount/${members.length} members loaded from cache');
 
         _memberIds = members;
         _memberNames = memberNames;
         _memberImages = memberImages;
 
+        // Set up chat container and stream
         _containerId = await _chatService.createOrGetGroupChat(
           groupId: groupId,
           groupName: groupName,
@@ -161,41 +157,63 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           memberNames: memberNames,
         );
         _messagesStream = _chatService.getGroupMessagesStream(_containerId!);
+
+        // Load cached messages for instant display
+        await _loadCachedMessages();
+
+        // Mark as initialized EARLY so UI shows immediately
+        if (mounted) {
+          setState(() {
+            _initialized = true;
+          });
+        }
+
+        // BACKGROUND: Fetch fresh user data from Firestore (non-blocking)
+        if (usersToFetch.isNotEmpty) {
+          debugPrint('🔄 Fetching ${usersToFetch.length} users from Firestore in background');
+          _fetchAndCacheUsers(usersToFetch);
+        } else {
+          debugPrint('✅ All group members loaded from cache - no Firestore fetch needed');
+        }
       } else {
         _isGroup = false;
         final otherUserId = data['otherUserId'] ?? data['userId'];
         if (otherUserId == null) {
           throw Exception('Missing user identifier');
         }
-        final otherUserName = data['otherUserName'] ?? data['name'] ?? 'User';
-        final otherUserImage =
+        
+        // FAST PATH: Load from cache first
+        String otherUserName = data['otherUserName'] ?? data['name'] ?? 'User';
+        String? otherUserImage =
             data['otherUserImageUrl'] ??
             data['profileImageUrl'] ??
             data['imageUrl'];
-
-        _containerId = await _chatService.createOrGetChat(
-          otherUserId: otherUserId,
-          otherUserName: otherUserName,
-          otherUserImageUrl: otherUserImage?.toString(),
-        );
-
-        // Fetch current user's username from Firestore for 1-on-1 chat
+        
         String currentUserDisplayName = 'You';
-        try {
-          final currentUserDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(currentUser.uid)
-              .get();
-          
-          if (currentUserDoc.exists && currentUserDoc.data() != null) {
-            final currentUserData = currentUserDoc.data()!;
-            currentUserDisplayName = currentUserData['username'] as String? ??
-                                    currentUserData['name'] as String? ??
-                                    currentUser.email?.split('@')[0] ?? 
-                                    'You';
+        final usersToFetch = <String>[];
+
+        // Check cache for other user
+        final cachedOtherUser = _userCacheService.getCachedUser(otherUserId);
+        if (cachedOtherUser != null) {
+          otherUserName = cachedOtherUser.displayName;
+          otherUserImage = cachedOtherUser.profileImageUrl ?? otherUserImage;
+          if (_userCacheService.isUserStale(otherUserId)) {
+            usersToFetch.add(otherUserId);
           }
-        } catch (e) {
-          debugPrint('Error loading current user data: $e');
+        } else {
+          usersToFetch.add(otherUserId);
+        }
+
+        // Check cache for current user
+        final cachedCurrentUser = _userCacheService.getCachedUser(currentUser.uid);
+        if (cachedCurrentUser != null) {
+          currentUserDisplayName = cachedCurrentUser.displayName;
+          if (_userCacheService.isUserStale(currentUser.uid)) {
+            usersToFetch.add(currentUser.uid);
+          }
+        } else {
+          currentUserDisplayName = currentUser.email?.split('@')[0] ?? 'You';
+          usersToFetch.add(currentUser.uid);
         }
 
         _memberIds = [currentUser.uid, otherUserId];
@@ -205,14 +223,33 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         };
         _memberImages = {otherUserId: otherUserImage?.toString()};
 
+        _containerId = await _chatService.createOrGetChat(
+          otherUserId: otherUserId,
+          otherUserName: otherUserName,
+          otherUserImageUrl: otherUserImage?.toString(),
+        );
         _messagesStream = _chatService.getMessagesStream(_containerId!);
+
+        // Load cached messages for instant display
+        await _loadCachedMessages();
+
+        // Mark as initialized EARLY so UI shows immediately
+        if (mounted) {
+          setState(() {
+            _initialized = true;
+          });
+        }
+
+        // BACKGROUND: Fetch fresh user data from Firestore (non-blocking)
+        if (usersToFetch.isNotEmpty) {
+          debugPrint('🔄 Fetching ${usersToFetch.length} users from Firestore in background');
+          _fetchAndCacheUsers(usersToFetch);
+        } else {
+          debugPrint('✅ All users loaded from cache - no Firestore fetch needed');
+        }
       }
 
-      setState(() {
-        _initialized = true;
-      });
-
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
       _scrollToBottom();
     } catch (e, stackTrace) {
       debugPrint('Chat init failed: $e');
@@ -227,8 +264,85 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
+  /// Fetch users from Firestore and update cache (runs in background)
+  Future<void> _fetchAndCacheUsers(List<String> userIds) async {
+    final usersToCache = <CachedUser>[];
+
+    for (final userId in userIds) {
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .get();
+
+        if (userDoc.exists && userDoc.data() != null) {
+          final userData = userDoc.data()!;
+          final displayName =
+              userData['username'] as String? ??
+              userData['name'] as String? ??
+              (userData['email'] as String?)?.split('@')[0] ??
+              'User';
+          final profileImageUrl = userData['profileImageUrl'] as String?;
+          final email = userData['email'] as String?;
+
+          usersToCache.add(CachedUser(
+            id: userId,
+            displayName: displayName,
+            profileImageUrl: profileImageUrl,
+            email: email,
+          ));
+
+          // Update local state if mounted
+          if (mounted) {
+            setState(() {
+              _memberNames[userId] = displayName;
+              _memberImages[userId] = profileImageUrl;
+            });
+          }
+        }
+      } catch (e) {
+        debugPrint('Error fetching user $userId: $e');
+      }
+    }
+
+    // Cache all fetched users
+    if (usersToCache.isNotEmpty) {
+      await _userCacheService.cacheUsers(usersToCache);
+      debugPrint('💾 Cached ${usersToCache.length} users');
+    }
+  }
+
+  /// Load cached messages from local storage for instant display
+  Future<void> _loadCachedMessages() async {
+    if (_containerId == null) return;
+
+    try {
+      final cached = await _cacheService.getCachedMessages(_containerId!);
+      if (cached.isNotEmpty && mounted) {
+        setState(() {
+          _cachedMessages = cached;
+        });
+        debugPrint('📦 Loaded ${cached.length} cached messages for offline access');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to load cached messages: $e');
+    }
+  }
+
+  /// Cache incoming messages to local storage
+  Future<void> _cacheNewMessages(List<MessageModel> messages) async {
+    if (_containerId == null || messages.isEmpty) return;
+
+    try {
+      await _cacheService.cacheMessages(_containerId!, messages);
+    } catch (e) {
+      debugPrint('❌ Failed to cache messages: $e');
+    }
+  }
+
   @override
   void dispose() {
+    _fadeController.dispose();
     _recordTimer?.cancel();
     _audioPlayer?.dispose();
     _messageController.dispose();
@@ -326,9 +440,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => CurrentGroupDetailScreen(
-                    group: widget.chatData,
-                  ),
+                  builder:
+                      (context) =>
+                          CurrentGroupDetailScreen(group: widget.chatData),
                 ),
               );
             } else {
@@ -341,9 +455,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => OtherUserProfileScreen(
-                      userId: otherId,
-                    ),
+                    builder:
+                        (context) => OtherUserProfileScreen(userId: otherId),
                   ),
                 );
               }
@@ -383,7 +496,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_selectedMessage!.senderId == _authService.currentUser?.uid &&
+                if (_selectedMessage!.senderId ==
+                        _authService.currentUser?.uid &&
                     _selectedMessage!.type == MessageType.text)
                   IconButton(
                     onPressed: () {
@@ -400,11 +514,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     tooltip: 'Edit',
                   ),
                 // Don't show copy for audio/voice messages
-                if (_selectedMessage!.message.isNotEmpty && 
+                if (_selectedMessage!.message.isNotEmpty &&
                     _selectedMessage!.type != MessageType.audio)
                   IconButton(
                     onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _selectedMessage!.message));
+                      Clipboard.setData(
+                        ClipboardData(text: _selectedMessage!.message),
+                      );
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: const Text('Text copied'),
@@ -436,13 +552,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ],
             )
           else
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: IconButton(
-                onPressed: _showChatInfo,
-                icon: Icon(Icons.info_outline, color: colorScheme.onSurface),
-                tooltip: _isGroup ? 'Group Details' : 'User Details',
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: _openPaymentsScreen,
+                  icon: Icon(Icons.receipt_long_outlined, color: colorScheme.onSurface),
+                  tooltip: 'Payment Requests',
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: IconButton(
+                    onPressed: _showChatInfo,
+                    icon: Icon(Icons.info_outline, color: colorScheme.onSurface),
+                    tooltip: _isGroup ? 'Group Details' : 'User Details',
+                  ),
+                ),
+              ],
             ),
         ],
       ),
@@ -463,6 +589,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Widget _buildMessagesArea() {
     if (!_initialized || _messagesStream == null) {
+      // If we have cached messages, show them while initializing
+      if (_cachedMessages.isNotEmpty) {
+        // Start fade animation for cached content
+        if (_isFirstLoad && !_fadeController.isAnimating && _fadeController.value == 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+            }
+            _fadeController.forward();
+            _isFirstLoad = false;
+          });
+        }
+        return _buildMessagesList(_cachedMessages, fromCache: true);
+      }
       return const Center(
         child: RoomieLoadingWidget(
           size: 60,
@@ -477,10 +617,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       builder: (context, snapshot) {
         final colorScheme = Theme.of(context).colorScheme;
         final textTheme = Theme.of(context).textTheme;
-        
-        // Only show loading on the very first connection before any data
-        if (snapshot.connectionState == ConnectionState.waiting && 
+
+        // Show cached messages while waiting for Firebase
+        if (snapshot.connectionState == ConnectionState.waiting &&
             snapshot.data == null) {
+          if (_cachedMessages.isNotEmpty) {
+            return _buildMessagesList(_cachedMessages, fromCache: true);
+          }
           return const Center(
             child: RoomieLoadingWidget(
               size: 60,
@@ -490,7 +633,33 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           );
         }
 
+        // On error, show cached messages if available
         if (snapshot.hasError) {
+          if (_cachedMessages.isNotEmpty) {
+            return Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  color: colorScheme.errorContainer.withOpacity(0.3),
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_off, size: 16, color: colorScheme.onErrorContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Offline mode - showing cached messages',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: _buildMessagesList(_cachedMessages, fromCache: true)),
+              ],
+            );
+          }
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -518,7 +687,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         }
 
         final messages = snapshot.data ?? const <MessageModel>[];
+        
+        // Cache new messages for offline access
+        if (messages.isNotEmpty) {
+          _cacheNewMessages(messages);
+          // Update cached messages reference
+          _cachedMessages = messages;
+        }
+        
         if (messages.isEmpty) {
+          // Check cached messages first
+          if (_cachedMessages.isNotEmpty) {
+            return _buildMessagesList(_cachedMessages, fromCache: true);
+          }
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -559,16 +740,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
         _syncMessageStates(messages);
 
-        return ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemCount: messages.length,
-          itemBuilder: (context, index) {
-            final message = messages[index];
-            return _buildMessageBubble(message);
-          },
-        );
+        return _buildMessagesList(messages, fromCache: false);
       },
+    );
+  }
+
+  /// Build the messages list view with smooth fade-in animation
+  Widget _buildMessagesList(List<MessageModel> messages, {bool fromCache = false}) {
+    final listView = ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      itemCount: messages.length,
+      itemBuilder: (context, index) {
+        final message = messages[index];
+        return _buildMessageBubble(message);
+      },
+    );
+    
+    // Wrap in fade animation for smooth appearance
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: listView,
     );
   }
 
@@ -588,6 +780,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           onVoiceRecorded: (file, duration) => _handleVoiceUpload(file),
           onPollPressed: () => _showPollDialog(),
           onTodoPressed: () => _showTodoDialog(),
+          onPaymentPressed: () => _showPaymentRequestDialog(),
           isUploading: _isUploading,
           isGroup: _isGroup,
         ),
@@ -792,6 +985,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     List<MessageAttachment> attachments = const [],
     PollData? poll,
     TodoData? todo,
+    PaymentRequestData? paymentRequest,
     Map<String, dynamic>? extraData,
   }) async {
     if (_containerId == null) return;
@@ -805,6 +999,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           attachments: attachments,
           poll: poll,
           todo: todo,
+          paymentRequest: paymentRequest,
           extraData: extraData,
         );
       } else {
@@ -815,6 +1010,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           attachments: attachments,
           poll: poll,
           todo: todo,
+          paymentRequest: paymentRequest,
           extraData: extraData,
         );
       }
@@ -835,13 +1031,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool instant = false}) {
     if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
+    
+    if (instant || _isFirstLoad) {
+      // Instant scroll on first load - no animation to avoid jarring effect
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      if (_isFirstLoad) {
+        _isFirstLoad = false;
+        // Start fade-in animation after positioning
+        _fadeController.forward();
+      }
+    } else {
+      // Animated scroll for new messages
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   void _syncMessageStates(List<MessageModel> messages) {
@@ -1077,6 +1285,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     await _sendRichMessage(type: MessageType.todo, todo: result);
   }
 
+  void _showPaymentRequestDialog() async {
+    final currentUserId = _authService.currentUser?.uid;
+    if (currentUserId == null || _containerId == null) return;
+
+    final result = await showDialog<PaymentRequestData>(
+      context: context,
+      builder:
+          (ctx) => CreatePaymentRequestDialog(
+            isGroup: _isGroup,
+            memberIds: _memberIds,
+            memberNames: _memberNames,
+            currentUserId: currentUserId,
+          ),
+    );
+
+    if (!mounted || result == null) return;
+    await _sendRichMessage(
+      type: MessageType.paymentRequest,
+      paymentRequest: result,
+      text: '💰 Payment Request: ₹${result.totalAmount.toStringAsFixed(0)}',
+    );
+  }
+
   Widget _buildMessageBubble(MessageModel message) {
     final currentUserId = _authService.currentUser?.uid;
     final isMine = message.senderId == currentUserId;
@@ -1114,7 +1345,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             : colorScheme.surfaceContainerHighest;
     final textColor =
         isMine ? colorScheme.onPrimaryContainer : colorScheme.onSurface;
-    
+
     final isSelected = _selectedMessage?.id == message.id;
 
     return GestureDetector(
@@ -1135,7 +1366,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(
-          crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             // Sender name and time above message (WhatsApp style)
             if (_isGroup)
@@ -1194,12 +1426,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: isSelected 
-                        ? colorScheme.primary.withOpacity(0.2)
-                        : bubbleColor,
-                    border: isSelected
-                        ? Border.all(color: colorScheme.primary, width: 2)
-                        : null,
+                    color:
+                        isSelected
+                            ? colorScheme.primary.withOpacity(0.2)
+                            : bubbleColor,
+                    border:
+                        isSelected
+                            ? Border.all(color: colorScheme.primary, width: 2)
+                            : null,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(18),
                       topRight: const Radius.circular(18),
@@ -1218,36 +1452,46 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               ? CrossAxisAlignment.end
                               : CrossAxisAlignment.start,
                       children: [
-                    if (message.attachments.isNotEmpty)
-                      ...message.attachments.map(
-                        (attachment) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _buildAttachmentPreview(attachment, message.id),
-                        ),
-                      ),
-                    // Don't show message text for audio/voice messages
-                    if (message.message.isNotEmpty && 
-                        (message.type != MessageType.audio || message.attachments.isEmpty))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          message.message,
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: textColor,
-                            height: 1.4,
+                        if (message.attachments.isNotEmpty)
+                          ...message.attachments.map(
+                            (attachment) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _buildAttachmentPreview(
+                                attachment,
+                                message.id,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    if (message.poll != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: _buildPollWidget(message),
-                      ),
-                    if (message.todo != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: _buildTodoWidget(message),
-                      ),
+                        // Don't show message text for audio/voice messages or payment requests
+                        if (message.message.isNotEmpty &&
+                            (message.type != MessageType.audio ||
+                                message.attachments.isEmpty) &&
+                            message.type != MessageType.paymentRequest)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              message.message,
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: textColor,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        if (message.poll != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: _buildPollWidget(message),
+                          ),
+                        if (message.todo != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: _buildTodoWidget(message),
+                          ),
+                        if (message.paymentRequest != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: _buildPaymentRequestWidget(message),
+                          ),
                       ],
                     ),
                   ),
@@ -1260,7 +1504,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildAttachmentPreview(MessageAttachment attachment, String messageId) {
+  Widget _buildAttachmentPreview(
+    MessageAttachment attachment,
+    String messageId,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -1317,8 +1564,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       // Voice/audio playback - WhatsApp style
       case AttachmentType.voice:
       case AttachmentType.audio:
-        final isThisAudioPlaying = _currentPlayingAudioId == messageId && _isAudioPlaying;
-        
+        final isThisAudioPlaying =
+            _currentPlayingAudioId == messageId && _isAudioPlaying;
+
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           decoration: BoxDecoration(
@@ -1347,7 +1595,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
               const SizedBox(width: 8),
-              
+
               // Waveform placeholder
               Expanded(
                 child: Column(
@@ -1371,9 +1619,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ],
                 ),
               ),
-              
+
               const SizedBox(width: 8),
-              
+
               // Duration
               Text(
                 attachment.durationInMs != null
@@ -1508,9 +1756,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               child: Text(
                 'View votes',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: totalVotes > 0 
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                  color:
+                      totalVotes > 0
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withOpacity(0.5),
                 ),
               ),
             ),
@@ -1565,27 +1816,66 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             secondary:
                 item.isDone && item.completedBy != null
                     ? CircleAvatar(
-                        radius: 14,
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        backgroundImage: _memberImages[item.completedBy] != null
-                            ? NetworkImage(_memberImages[item.completedBy]!)
-                            : null,
-                        child: _memberImages[item.completedBy] == null
-                            ? Text(
-                                _resolveUserName(item.completedBy!)
-                                    .substring(0, 1)
-                                    .toUpperCase(),
-                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  fontSize: 10,
-                                ),
+                      radius: 14,
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      backgroundImage:
+                          _memberImages[item.completedBy] != null
+                              ? NetworkImage(_memberImages[item.completedBy]!)
+                              : null,
+                      child:
+                          _memberImages[item.completedBy] == null
+                              ? Text(
+                                _resolveUserName(
+                                  item.completedBy!,
+                                ).substring(0, 1).toUpperCase(),
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.labelSmall?.copyWith(fontSize: 10),
                               )
-                            : null,
-                      )
+                              : null,
+                    )
                     : null,
           ),
         ),
       ],
     );
+  }
+
+  Widget _buildPaymentRequestWidget(MessageModel message) {
+    final paymentRequest = message.paymentRequest!;
+    final currentUserId = _authService.currentUser?.uid ?? '';
+    final isMine = message.senderId == currentUserId;
+
+    return PaymentRequestCard(
+      paymentRequest: paymentRequest,
+      currentUserId: currentUserId,
+      senderId: message.senderId,
+      memberNames: _memberNames,
+      isSentByMe: isMine,
+      onPaymentStatusChanged: (odId, newStatus) {
+        _handlePaymentStatusChange(message.id, odId, newStatus);
+      },
+    );
+  }
+
+  void _handlePaymentStatusChange(
+    String messageId,
+    String odId,
+    PaymentStatus newStatus,
+  ) async {
+    if (_containerId == null) return;
+
+    try {
+      await _chatService.updatePaymentRequestStatus(
+        containerId: _containerId!,
+        messageId: messageId,
+        odId: odId,
+        newStatus: newStatus,
+        isGroupChat: _isGroup,
+      );
+    } catch (e) {
+      _showError('Failed to update payment status: $e');
+    }
   }
 
   Widget _buildStatusRow(MessageModel message, bool isMine) {
@@ -1853,7 +2143,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 16),
                 ...poll.options.map((option) {
                   if (option.votes.isEmpty) return const SizedBox.shrink();
-                  
+
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1872,18 +2162,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             children: [
                               CircleAvatar(
                                 radius: 16,
-                                backgroundColor: colorScheme.surfaceContainerHighest,
-                                backgroundImage: _memberImages[userId] != null
-                                    ? NetworkImage(_memberImages[userId]!)
-                                    : null,
-                                child: _memberImages[userId] == null
-                                    ? Text(
-                                        _resolveUserName(userId)
-                                            .substring(0, 1)
-                                            .toUpperCase(),
-                                        style: textTheme.bodySmall,
-                                      )
-                                    : null,
+                                backgroundColor:
+                                    colorScheme.surfaceContainerHighest,
+                                backgroundImage:
+                                    _memberImages[userId] != null
+                                        ? NetworkImage(_memberImages[userId]!)
+                                        : null,
+                                child:
+                                    _memberImages[userId] == null
+                                        ? Text(
+                                          _resolveUserName(
+                                            userId,
+                                          ).substring(0, 1).toUpperCase(),
+                                          style: textTheme.bodySmall,
+                                        )
+                                        : null,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -2034,6 +2327,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _showError('Unable to open file.');
     }
+  }
+
+  void _openPaymentsScreen() {
+    if (_containerId == null) return;
+
+    final chatName = _isGroup
+        ? (widget.chatData['name'] ?? widget.chatData['groupName'] ?? 'Group')
+        : (_memberNames.entries
+                .firstWhere(
+                  (e) => e.key != _authService.currentUser?.uid,
+                  orElse: () => const MapEntry('', 'Chat'),
+                )
+                .value);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatPaymentsScreen(
+          containerId: _containerId!,
+          chatName: chatName,
+          isGroup: _isGroup,
+          memberNames: _memberNames,
+        ),
+      ),
+    );
   }
 
   void _showChatInfo() {
@@ -2197,37 +2515,37 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 12),
-            ...members.map(
-              (memberId) {
-                final isCurrentUser = _authService.currentUser?.uid == memberId;
-                final displayName = _resolveUserName(memberId);
-                
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    backgroundImage: _memberImages[memberId] != null 
-                        ? NetworkImage(_memberImages[memberId]!)
-                        : null,
-                    child: _memberImages[memberId] == null
-                        ? Text(
-                          displayName.substring(0, 1).toUpperCase(),
-                          style: TextStyle(
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        )
-                        : null,
+            ...members.map((memberId) {
+              final isCurrentUser = _authService.currentUser?.uid == memberId;
+              final displayName = _resolveUserName(memberId);
+
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  backgroundImage:
+                      _memberImages[memberId] != null
+                          ? NetworkImage(_memberImages[memberId]!)
+                          : null,
+                  child:
+                      _memberImages[memberId] == null
+                          ? Text(
+                            displayName.substring(0, 1).toUpperCase(),
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                          : null,
+                ),
+                title: Text(
+                  isCurrentUser ? '$displayName (You)' : displayName,
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  title: Text(
-                    isCurrentUser ? '$displayName (You)' : displayName,
-                    style: textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                );
-              },
-            ),
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -2565,7 +2883,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
 
       // If clicking on a paused audio, resume it
-      if (_currentPlayingAudioId == messageId && !_isAudioPlaying && _audioPlayer != null) {
+      if (_currentPlayingAudioId == messageId &&
+          !_isAudioPlaying &&
+          _audioPlayer != null) {
         await _audioPlayer!.play();
         if (mounted) {
           setState(() {
@@ -2576,7 +2896,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
 
       // If another audio is playing, stop it
-      if (_currentPlayingAudioId != null && _currentPlayingAudioId != messageId) {
+      if (_currentPlayingAudioId != null &&
+          _currentPlayingAudioId != messageId) {
         await _audioPlayer?.stop();
         await _audioPlayer?.dispose();
         _audioPlayer = null;
@@ -2585,7 +2906,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       // Create new player for new audio
       _audioPlayer = AudioPlayer();
       await _audioPlayer!.setUrl(audioUrl);
-      
+
       // Listen for completion
       _audioPlayer!.playerStateStream.listen((state) {
         if (state.processingState == ProcessingState.completed) {
@@ -2620,7 +2941,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _showTodoDialog() {
     _showCreateTodoSheet();
   }
-
 }
 
 class _MessageAction {

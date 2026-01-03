@@ -250,80 +250,80 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                     : MainAxisAlignment.start,
             children: [
               if (!widget.isCurrentUser) ...[const SizedBox(width: 48)],
-                Flexible(
-                  child: GestureDetector(
-                    onLongPress: widget.isCurrentUser ? _toggleOptions : null,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: bubbleColor,
-                        borderRadius: BorderRadius.only(
-                          topLeft: const Radius.circular(18),
-                          topRight: const Radius.circular(18),
-                          bottomLeft: Radius.circular(
-                            widget.isCurrentUser ? 18 : 4,
-                          ),
-                          bottomRight: Radius.circular(
-                            widget.isCurrentUser ? 4 : 18,
-                          ),
+              Flexible(
+                child: GestureDetector(
+                  onLongPress: widget.isCurrentUser ? _toggleOptions : null,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: bubbleColor,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(
+                          widget.isCurrentUser ? 18 : 4,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                        bottomRight: Radius.circular(
+                          widget.isCurrentUser ? 4 : 18,
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Message content
-                          _buildMessageContent(textColor),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Message content
+                        _buildMessageContent(textColor),
 
-                          const SizedBox(height: 4),
+                        const SizedBox(height: 4),
 
-                          // Message info
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              if (widget.message.editedAt != null) ...[
-                                Icon(
-                                  Icons.edit,
-                                  size: 12,
-                                  color: textColor.withOpacity(0.7),
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-                              Text(
-                                timeago.format(widget.message.timestamp),
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: textColor.withOpacity(0.7),
-                                  fontSize: 11,
+                        // Message info
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            if (widget.message.editedAt != null) ...[
+                              Icon(
+                                Icons.edit,
+                                size: 12,
+                                color: textColor.withOpacity(0.7),
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              timeago.format(widget.message.timestamp),
+                              style: textTheme.bodySmall?.copyWith(
+                                color: textColor.withOpacity(0.7),
+                                fontSize: 11,
+                              ),
+                            ),
+                            if (widget.isCurrentUser) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                _getStatusIcon(widget.message.status),
+                                size: 12,
+                                color: _getStatusColor(
+                                  widget.message.status,
+                                  colorScheme,
                                 ),
                               ),
-                              if (widget.isCurrentUser) ...[
-                                const SizedBox(width: 4),
-                                Icon(
-                                  _getStatusIcon(widget.message.status),
-                                  size: 12,
-                                  color: _getStatusColor(
-                                    widget.message.status,
-                                    colorScheme,
-                                  ),
-                                ),
-                              ],
                             ],
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                if (widget.isCurrentUser) ...[const SizedBox(width: 48)],
-              ],
-            ),
+              ),
+              if (widget.isCurrentUser) ...[const SizedBox(width: 48)],
+            ],
+          ),
 
           // Message options
           if (_showOptions)
@@ -389,6 +389,8 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         return _buildPollMessage(textColor);
       case MessageType.todo:
         return _buildTodoMessage(textColor);
+      case MessageType.paymentRequest:
+        return _buildPaymentRequestMessage(textColor);
       case MessageType.system:
         return _buildSystemMessage(textColor);
     }
@@ -742,6 +744,71 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
           );
         }),
       ],
+    );
+  }
+
+  Widget _buildPaymentRequestMessage(Color textColor) {
+    final paymentRequest = widget.message.paymentRequest;
+    if (paymentRequest == null) {
+      return Text(
+        'Payment request unavailable',
+        style: TextStyle(color: textColor.withOpacity(0.7)),
+      );
+    }
+
+    final currencySymbol =
+        paymentRequest.currency == 'INR' ? '₹' : paymentRequest.currency;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colorScheme.primary.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.currency_rupee, color: colorScheme.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Payment Request',
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$currencySymbol${paymentRequest.totalAmount.toStringAsFixed(2)}',
+            style: TextStyle(
+              color: textColor,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (paymentRequest.note != null &&
+              paymentRequest.note!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              paymentRequest.note!,
+              style: TextStyle(color: textColor.withOpacity(0.8), fontSize: 14),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            '${paymentRequest.paidCount}/${paymentRequest.participants.length} paid',
+            style: TextStyle(color: textColor.withOpacity(0.7), fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
