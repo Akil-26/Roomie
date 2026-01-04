@@ -91,7 +91,8 @@ class AuthWrapper extends StatelessWidget {
               return const UserDetailsScreen(isFromPhoneSignup: true);
             } else {
               // User is fully set up, go to home
-              return const HomeScreen();
+              // Use key with user ID to force widget recreation on account switch
+              return HomeScreen(key: ValueKey(snapshot.data!.uid));
             }
           },
         );

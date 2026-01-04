@@ -82,7 +82,27 @@ class _AvailableGroupDetailScreenState
         throw Exception('User not authenticated');
       }
 
-      final success = await _groupsService.sendJoinRequest(widget.group['id']);
+      final roomId = widget.group['id'];
+      final creationType = widget.group['creationType'] ?? 'user_created';
+      final ownerId = widget.group['ownerId'];
+
+      bool success = false;
+      
+      // STEP-4: Different join flows based on room type
+      if (creationType == 'owner_created' && ownerId != null) {
+        // Owner-created rooms: Request goes to owner for approval
+        // First check eligibility
+        final eligibility = await _groupsService.canRequestToJoin(roomId);
+        if (eligibility['canJoin'] != true) {
+          throw Exception(eligibility['reason'] ?? 'Cannot join this room');
+        }
+        
+        final requestId = await _groupsService.requestToJoinRoom(roomId);
+        success = requestId != null;
+      } else {
+        // User-created rooms: Use existing join request flow (members approve)
+        success = await _groupsService.sendJoinRequest(roomId);
+      }
 
       if (success && mounted) {
         final colorScheme = Theme.of(context).colorScheme;

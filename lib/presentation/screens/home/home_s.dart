@@ -233,6 +233,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Clear any cached state first to ensure fresh data for this user
+    _groupsService.clearCache();
+    // Reset local state
+    _currentUserGroup = null;
+    _availableGroups = [];
+    _canUserCreateGroup = false;
+    _isLoadingGroups = true;
+    // Now load fresh data
     _loadUserGroupData();
   }
 
@@ -281,6 +289,45 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Performs the actual leave group action without showing a confirmation dialog.
+  /// Used when called from detail screens that have their own confirmation dialog.
+  Future<void> _performLeaveGroup() async {
+    if (_currentUserGroup == null) return;
+
+    try {
+      await _groupsService.leaveGroup(_currentUserGroup!['id']);
+      await _loadUserGroupData(); // Refresh home screen data
+
+      if (mounted) {
+        final colorScheme = Theme.of(context).colorScheme;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Successfully left the group',
+              style: TextStyle(color: colorScheme.onPrimary),
+            ),
+            backgroundColor: colorScheme.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        final colorScheme = Theme.of(context).colorScheme;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error leaving group: $e',
+              style: TextStyle(color: colorScheme.onError),
+            ),
+            backgroundColor: colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Shows confirmation dialog and then leaves the group if confirmed.
+  /// Used when called directly from home screen.
   Future<void> _leaveGroup() async {
     if (_currentUserGroup == null) return;
 
@@ -311,7 +358,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (confirmed == true) {
         await _groupsService.leaveGroup(_currentUserGroup!['id']);
-        // Pop the details screen
+        // Pop the details screen if we're in it
         if (mounted) Navigator.of(context).pop();
         await _loadUserGroupData(); // Refresh home screen data
 
@@ -353,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder:
             (context) => CurrentGroupDetailScreen(
               group: _currentUserGroup!,
-              onLeaveGroup: _leaveGroup,
+              onLeaveGroup: _performLeaveGroup, // Use the non-dialog version
             ),
       ),
     ).then((_) => _loadUserGroupData());
@@ -1341,7 +1388,7 @@ class _HomeScreenState extends State<HomeScreen> {
 class GroupDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> group;
   final bool isCurrentUserGroup;
-  final VoidCallback? onLeaveGroup;
+  final Future<void> Function()? onLeaveGroup;
 
   const GroupDetailsScreen({
     super.key,

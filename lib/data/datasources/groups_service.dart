@@ -6,8 +6,23 @@ import 'package:roomie/data/datasources/cloudinary_service.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
+import 'package:roomie/data/models/room_member_model.dart';
+import 'package:roomie/data/models/room_ownership_request_model.dart';
+import 'package:roomie/data/models/room_join_request_model.dart';
 
 /// Singleton service for group operations with caching
+/// 
+/// IMPORTANT RULES FOR ROOM PERSISTENCE:
+/// 1. Rooms should NEVER be auto-deleted when users leave
+/// 2. Only change status to 'inactive' instead of deleting
+/// 3. Leaving users should not affect room visibility
+/// 4. Room existence is independent of member count
+/// 
+/// STEP-2: OWNER CLAIM RULES:
+/// 5. Owner can request to manage an existing room (not create duplicate)
+/// 6. On approval: set room.ownerId, change creationType to 'owner_created'
+/// 7. Room ID NEVER changes during ownership claim
+/// 8. Existing roommates are NOT affected by ownership claim
 class GroupsService {
   // Singleton pattern
   static final GroupsService _instance = GroupsService._internal();
@@ -19,16 +34,22 @@ class GroupsService {
   final _cloudinary = CloudinaryService();
   final _notificationService = NotificationService();
   static const String _collection = 'groups';
+  static const String _roomMembersCollection = 'room_members';
+  static const String _ownershipRequestsCollection = 'room_ownership_requests';
+  static const String _joinRequestsCollection = 'room_join_requests';
 
-  // Cache for current user's group
+  // Cache for current user's group (user-specific)
   Map<String, dynamic>? _currentGroupCache;
   DateTime? _currentGroupCacheTime;
+  String? _cachedUserId; // Track which user the cache belongs to
   static const Duration _cacheExpiry = Duration(minutes: 2);
 
-  /// Clear cache (call on logout or group change)
+  /// Clear cache (call on logout, account switch, or group change)
   void clearCache() {
     _currentGroupCache = null;
     _currentGroupCacheTime = null;
+    _cachedUserId = null;
+    print('GroupsService: Cache cleared');
   }
 
   Future<String?> createGroup({
@@ -129,9 +150,22 @@ class GroupsService {
       'isActive': true,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      // === NEW FIELDS FOR ROOM PERSISTENCE ===
+      'status': 'active', // Room status: active | inactive (NEVER delete rooms)
+      'isPublic': true, // Whether room appears in available rooms
+      'creationType': 'user_created', // user_created | owner_created
+      'ownerId': null, // For future owner-merge feature
     };
 
     await docRef.set(data);
+    
+    // Create room member record for the creator
+    await _createRoomMemberRecord(
+      roomId: docRef.id,
+      userId: user.uid,
+      role: 'admin',
+    );
+    
     await _updateGroupChatMembers(docRef.id);
 
     // Invalidate cache after creating group
@@ -157,13 +191,21 @@ class GroupsService {
     final user = AuthService().currentUser;
     if (user == null) {
       print('No user authenticated for getCurrentUserGroup');
+      clearCache(); // Clear any stale cache when no user
       return null;
+    }
+
+    // Invalidate cache if user changed (account switch)
+    if (_cachedUserId != null && _cachedUserId != user.uid) {
+      print('User changed from $_cachedUserId to ${user.uid}, clearing cache');
+      clearCache();
     }
 
     // Return cached data if valid and not forcing refresh
     if (!forceRefresh && 
         _currentGroupCache != null && 
         _currentGroupCacheTime != null &&
+        _cachedUserId == user.uid &&
         DateTime.now().difference(_currentGroupCacheTime!) < _cacheExpiry) {
       print('Returning cached current group');
       return _currentGroupCache;
@@ -183,16 +225,18 @@ class GroupsService {
 
     if (snapshot.docs.isNotEmpty) {
       final groupData = snapshot.docs.first.data();
-      // Update cache
+      // Update cache with user ID
       _currentGroupCache = groupData;
       _currentGroupCacheTime = DateTime.now();
+      _cachedUserId = user.uid;
       print('Current user group: ${groupData['name']} (${groupData['id']})');
       return groupData;
     }
 
-    // Cache the null result too
+    // Cache the null result too (with user ID)
     _currentGroupCache = null;
     _currentGroupCacheTime = DateTime.now();
+    _cachedUserId = user.uid;
     print('No current group found for user');
     return null;
   }
@@ -204,6 +248,8 @@ class GroupsService {
   }
 
   // Get available groups (excluding user's current group)
+  // UPDATED: Rooms shown based on status == 'active' AND isPublic == true
+  // This ensures rooms remain visible even if all members leave
   Future<List<Map<String, dynamic>>> getAvailableGroups() async {
     final user = AuthService().currentUser;
     if (user == null) {
@@ -213,6 +259,10 @@ class GroupsService {
 
     print('Getting available groups for user: ${user.uid}');
 
+    // Query rooms that are:
+    // 1. status == 'active' (not deactivated)
+    // 2. isPublic == true (visible in listings)
+    // Note: We check both 'isActive' (legacy) and 'status' for backward compatibility
     final snapshot =
         await _firestore
             .collection(_collection)
@@ -226,10 +276,16 @@ class GroupsService {
         snapshot.docs.map((d) => d.data()).where((group) {
           final members = List<String>.from(group['members'] ?? []);
           final isUserMember = members.contains(user.uid);
+          // Check room status and visibility
+          final status = group['status'] ?? 'active';
+          final isPublic = group['isPublic'] ?? true;
+          final isRoomAvailable = status == 'active' && isPublic;
+          
           print(
-            'Group ${group['name']}: members=$members, userIsMember=$isUserMember',
+            'Group ${group['name']}: members=$members, userIsMember=$isUserMember, status=$status, isPublic=$isPublic',
           );
-          return !isUserMember; // Exclude groups user is already in
+          // Room is available if: active, public, and user is not already a member
+          return isRoomAvailable && !isUserMember;
         }).toList();
 
     print('Available groups count: ${availableGroups.length}');
@@ -250,6 +306,12 @@ class GroupsService {
     final groupData = groupSnapshot.data()!;
     final members = List<String>.from(groupData['members'] ?? []);
     final maxMembers = groupData['maxMembers'] as int;
+    
+    // Check room status before allowing join
+    final status = groupData['status'] ?? 'active';
+    if (status != 'active') {
+      throw Exception('This room is no longer available');
+    }
 
     if (members.length >= maxMembers) {
       throw Exception('Group is already full');
@@ -265,7 +327,18 @@ class GroupsService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
+    // Create or reactivate room member record
+    await _createOrReactivateRoomMember(
+      roomId: groupId,
+      userId: user.uid,
+      role: 'member',
+    );
+
     await _updateGroupChatMembers(groupId);
+    
+    // Invalidate cache
+    clearCache();
+    
     return true;
   }
 
@@ -314,8 +387,26 @@ class GroupsService {
     // Update real-time chat members for both groups
     await _updateGroupChatMembers(currentGroupId);
     await _updateGroupChatMembers(newGroupId);
+    
+    // Update room member records
+    await _markRoomMemberAsLeft(currentGroupId, userId);
+    await _createOrReactivateRoomMember(
+      roomId: newGroupId,
+      userId: userId,
+      role: 'member',
+    );
+    
+    // Invalidate cache
+    clearCache();
   }
 
+  /// Leave a group - CRITICAL: This will NEVER delete the room
+  /// 
+  /// When a user leaves:
+  /// 1. Remove user from members array
+  /// 2. Decrement member count
+  /// 3. Mark room_member record as inactive (isActive = false, leftAt = timestamp)
+  /// 4. Room remains visible in available rooms (if status == 'active' && isPublic == true)
   Future<void> leaveGroup(String groupId) async {
     final user = AuthService().currentUser;
     if (user == null) throw Exception('Not authenticated');
@@ -332,65 +423,185 @@ class GroupsService {
       if (members.contains(user.uid)) {
         members.remove(user.uid);
 
-        // If the group is now empty, delete it completely.
-        // Otherwise, just update the member list and count.
-        if (members.isEmpty) {
-          // Delete the group document completely when no members left
-          tx.delete(ref);
-        } else {
-          tx.update(ref, {
-            'members': members,
-            'memberCount': members.length,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        }
+        // IMPORTANT: NEVER delete the room, even if empty
+        // Just update the member list - room persists independently
+        tx.update(ref, {
+          'members': members,
+          'memberCount': members.length,
+          'currentMembers': members.length,
+          'updatedAt': FieldValue.serverTimestamp(),
+          // Room status remains 'active' - it's still available for others to join
+        });
+        
+        print('✅ User ${user.uid} left group $groupId. Remaining members: ${members.length}');
+        print('📌 Room persists - NOT deleted. Room is still available for others.');
       } else {
-        // This case should ideally not happen if UI is correct
         throw Exception('User is not a member of this group');
       }
     });
 
-    // Clean up related data if group was deleted (members empty)
-    final groupDoc = await ref.get();
-    if (!groupDoc.exists) {
-      // Group was deleted, so clean up related collections
-      await _cleanupGroupData(groupId);
-    }
+    // Mark the room member record as inactive (DO NOT delete)
+    await _markRoomMemberAsLeft(groupId, user.uid);
+    
+    // Update real-time chat members
+    await _updateGroupChatMembers(groupId);
+    
+    // Invalidate cache
+    clearCache();
+    
+    print('✅ Leave group completed. Room $groupId remains active.');
   }
 
-  /// Helper method to clean up all related data when a group is deleted
-  Future<void> _cleanupGroupData(String groupId) async {
+  // ============================================================
+  // ROOM MEMBER MANAGEMENT METHODS
+  // These methods manage the room_members collection for tracking
+  // user-room relationships independently of the room itself
+  // ============================================================
+
+  /// Create a new room member record
+  Future<void> _createRoomMemberRecord({
+    required String roomId,
+    required String userId,
+    required String role,
+  }) async {
     try {
-      // Delete all join requests for this group
-      final joinRequestsQuery = await _firestore
-          .collection('joinRequests')
-          .where('groupId', isEqualTo: groupId)
-          .get();
+      final memberRef = _firestore.collection(_roomMembersCollection).doc();
+      final memberData = RoomMemberModel(
+        id: memberRef.id,
+        roomId: roomId,
+        userId: userId,
+        role: role,
+        joinedAt: DateTime.now(),
+        isActive: true,
+      );
       
-      for (var doc in joinRequestsQuery.docs) {
-        await doc.reference.delete();
-      }
-
-      // Delete group chat messages
-      final messagesQuery = await _firestore
-          .collection('chats')
-          .doc(groupId)
-          .collection('messages')
-          .get();
-      
-      for (var doc in messagesQuery.docs) {
-        await doc.reference.delete();
-      }
-
-      // Delete the chat document itself
-      await _firestore.collection('chats').doc(groupId).delete();
-
-      print('Successfully cleaned up all data for deleted group: $groupId');
+      await memberRef.set(memberData.toMap());
+      print('✅ Created room member record: ${memberRef.id} for user $userId in room $roomId');
     } catch (e) {
-      print('Error cleaning up group data: $e');
-      // Don't throw error as the main group deletion already succeeded
+      print('❌ Error creating room member record: $e');
+      // Don't throw - this is a secondary operation
     }
   }
+
+  /// Create or reactivate a room member record
+  /// If user previously left this room, reactivate the record instead of creating new
+  Future<void> _createOrReactivateRoomMember({
+    required String roomId,
+    required String userId,
+    required String role,
+  }) async {
+    try {
+      // Check if user has an existing (inactive) record for this room
+      final existingQuery = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('userId', isEqualTo: userId)
+          .limit(1)
+          .get();
+
+      if (existingQuery.docs.isNotEmpty) {
+        // Reactivate existing record
+        final existingDoc = existingQuery.docs.first;
+        await existingDoc.reference.update({
+          'isActive': true,
+          'leftAt': null,
+          'joinedAt': FieldValue.serverTimestamp(),
+          'role': role,
+        });
+        print('✅ Reactivated room member record for user $userId in room $roomId');
+      } else {
+        // Create new record
+        await _createRoomMemberRecord(
+          roomId: roomId,
+          userId: userId,
+          role: role,
+        );
+      }
+    } catch (e) {
+      print('❌ Error in _createOrReactivateRoomMember: $e');
+    }
+  }
+
+  /// Mark a room member as having left (DO NOT delete the record)
+  Future<void> _markRoomMemberAsLeft(String roomId, String userId) async {
+    try {
+      final query = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('userId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        await query.docs.first.reference.update({
+          'isActive': false,
+          'leftAt': FieldValue.serverTimestamp(),
+        });
+        print('✅ Marked room member as left: user $userId from room $roomId');
+      }
+    } catch (e) {
+      print('❌ Error marking room member as left: $e');
+    }
+  }
+
+  /// Get active members of a room from room_members collection
+  Future<List<RoomMemberModel>> getRoomMembers(String roomId) async {
+    try {
+      final query = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('isActive', isEqualTo: true)
+          .get();
+
+      return query.docs
+          .map((doc) => RoomMemberModel.fromMap(doc.data(), doc.id))
+          .toList();
+    } catch (e) {
+      print('❌ Error getting room members: $e');
+      return [];
+    }
+  }
+
+  /// Get room membership history (including past members)
+  Future<List<RoomMemberModel>> getRoomMembershipHistory(String roomId) async {
+    try {
+      final query = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: roomId)
+          .orderBy('joinedAt', descending: true)
+          .get();
+
+      return query.docs
+          .map((doc) => RoomMemberModel.fromMap(doc.data(), doc.id))
+          .toList();
+    } catch (e) {
+      print('❌ Error getting room membership history: $e');
+      return [];
+    }
+  }
+
+  /// Check if user is an active member of a room
+  Future<bool> isUserActiveMember(String roomId, String userId) async {
+    try {
+      final query = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('userId', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      return query.docs.isNotEmpty;
+    } catch (e) {
+      print('❌ Error checking active membership: $e');
+      return false;
+    }
+  }
+
+  // ============================================================
+  // END ROOM MEMBER MANAGEMENT METHODS
+  // ============================================================
 
   Future<bool> updateGroup({
     required String groupId,
@@ -445,12 +656,43 @@ class GroupsService {
     return true;
   }
 
+  /// Deactivate a room (soft delete)
+  /// IMPORTANT: This does NOT delete the room, just changes its status to 'inactive'
+  /// The room data is preserved for history and potential reactivation
   Future<bool> deleteGroup(String groupId) async {
     final ref = _firestore.collection(_collection).doc(groupId);
     await ref.update({
       'isActive': false,
+      'status': 'inactive', // New field for room persistence
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    
+    print('✅ Room $groupId deactivated (soft deleted). Data preserved.');
+    return true;
+  }
+
+  /// Reactivate a previously deactivated room
+  Future<bool> reactivateRoom(String groupId) async {
+    final ref = _firestore.collection(_collection).doc(groupId);
+    await ref.update({
+      'isActive': true,
+      'status': 'active',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    
+    print('✅ Room $groupId reactivated.');
+    return true;
+  }
+
+  /// Set room visibility (public/private)
+  Future<bool> setRoomVisibility(String groupId, bool isPublic) async {
+    final ref = _firestore.collection(_collection).doc(groupId);
+    await ref.update({
+      'isPublic': isPublic,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    
+    print('✅ Room $groupId visibility set to ${isPublic ? 'public' : 'private'}');
     return true;
   }
 
@@ -598,10 +840,19 @@ class GroupsService {
             tx.update(groupRef, {
               'members': members,
               'memberCount': members.length,
+              'currentMembers': members.length,
               'updatedAt': FieldValue.serverTimestamp(),
             });
           }
         });
+        
+        // Create room member record for the new member
+        await _createOrReactivateRoomMember(
+          roomId: groupId,
+          userId: userId,
+          role: 'member',
+        );
+        
         await _updateGroupChatMembers(groupId);
       }
 
@@ -616,6 +867,9 @@ class GroupsService {
         requestId: requestId,
         memberIds: members,
       );
+      
+      // Invalidate cache
+      clearCache();
 
       return true;
     } catch (e) {
@@ -772,4 +1026,842 @@ class GroupsService {
       return false;
     }
   }
+
+  // ============================================================
+  // STEP-2: OWNER CLAIM & MANAGEMENT
+  // ============================================================
+  // RULES:
+  // - Owner can request to manage existing room (no duplication)
+  // - On approval: room.ownerId is set, creationType becomes 'owner_created'
+  // - Room ID NEVER changes
+  // - Existing roommates are NOT affected
+  // - Owner is NOT added as roommate (separate role)
+  // ============================================================
+
+  /// Check if a room can be claimed by an owner
+  /// Room must have: ownerId == null AND status == 'active'
+  Future<bool> canRoomBeClaimed(String roomId) async {
+    try {
+      final roomDoc = await _firestore.collection(_collection).doc(roomId).get();
+      if (!roomDoc.exists) return false;
+      
+      final data = roomDoc.data()!;
+      final ownerId = data['ownerId'];
+      final status = data['status'] ?? 'active';
+      
+      // Room can only be claimed if no owner and active
+      return ownerId == null && status == 'active';
+    } catch (e) {
+      print('❌ Error checking if room can be claimed: $e');
+      return false;
+    }
+  }
+
+  /// Check if owner already has a pending claim for this room
+  Future<bool> hasOwnerPendingClaim(String roomId, String ownerId) async {
+    try {
+      final query = await _firestore
+          .collection(_ownershipRequestsCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('ownerId', isEqualTo: ownerId)
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get();
+      
+      return query.docs.isNotEmpty;
+    } catch (e) {
+      print('❌ Error checking pending ownership claim: $e');
+      return false;
+    }
+  }
+
+  /// Create ownership request for a room
+  /// IMPORTANT: This does NOT create a new room or modify existing room
+  /// Status starts as 'pending' - room creator must approve
+  Future<String?> createOwnershipRequest(String roomId) async {
+    final user = AuthService().currentUser;
+    if (user == null) {
+      print('❌ Cannot create ownership request: Not authenticated');
+      return null;
+    }
+
+    try {
+      // Verify room can be claimed
+      final canClaim = await canRoomBeClaimed(roomId);
+      if (!canClaim) {
+        print('❌ Room cannot be claimed: Either already has owner or inactive');
+        return null;
+      }
+
+      // Check for existing pending claim by this owner
+      final hasPending = await hasOwnerPendingClaim(roomId, user.uid);
+      if (hasPending) {
+        print('❌ Owner already has pending claim for this room');
+        return null;
+      }
+
+      // Create the ownership request
+      final docRef = _firestore.collection(_ownershipRequestsCollection).doc();
+      final request = RoomOwnershipRequestModel(
+        requestId: docRef.id,
+        roomId: roomId,
+        ownerId: user.uid,
+        status: OwnershipRequestStatus.pending,
+        requestedAt: DateTime.now(),
+      );
+
+      await docRef.set(request.toMap());
+      print('✅ Ownership request created: ${docRef.id}');
+
+      // Notify room admin/creator about the claim request
+      final roomDoc = await _firestore.collection(_collection).doc(roomId).get();
+      if (roomDoc.exists) {
+        final roomData = roomDoc.data()!;
+        final creatorId = roomData['createdBy'];
+        if (creatorId != null && creatorId != user.uid) {
+          await _notificationService.sendOwnershipClaimNotification(
+            roomId: roomId,
+            roomName: roomData['name'] ?? 'Unknown Room',
+            ownerId: user.uid,
+            creatorId: creatorId,
+            requestId: docRef.id,
+          );
+        }
+      }
+
+      return docRef.id;
+    } catch (e) {
+      print('❌ Error creating ownership request: $e');
+      return null;
+    }
+  }
+
+  /// Approve ownership request
+  /// CRITICAL: This ONLY updates room.ownerId and creationType
+  /// Does NOT: merge rooms, move users, copy data, or delete anything
+  Future<bool> approveOwnershipRequest(String requestId) async {
+    final currentUser = AuthService().currentUser;
+    if (currentUser == null) return false;
+
+    try {
+      // Get the request
+      final requestDoc = await _firestore
+          .collection(_ownershipRequestsCollection)
+          .doc(requestId)
+          .get();
+      
+      if (!requestDoc.exists) {
+        print('❌ Ownership request not found');
+        return false;
+      }
+
+      final request = RoomOwnershipRequestModel.fromFirestore(requestDoc);
+      
+      if (!request.isPending) {
+        print('❌ Request is not pending');
+        return false;
+      }
+
+      // Verify current user is room creator (admin)
+      final roomDoc = await _firestore.collection(_collection).doc(request.roomId).get();
+      if (!roomDoc.exists) {
+        print('❌ Room not found');
+        return false;
+      }
+
+      final roomData = roomDoc.data()!;
+      final creatorId = roomData['createdBy'];
+      
+      if (creatorId != currentUser.uid) {
+        print('❌ Only room creator can approve ownership requests');
+        return false;
+      }
+
+      // Verify room still has no owner
+      if (roomData['ownerId'] != null) {
+        print('❌ Room already has an owner');
+        return false;
+      }
+
+      // Use batch to update both atomically
+      final batch = _firestore.batch();
+
+      // Update the request
+      batch.update(requestDoc.reference, {
+        'status': 'approved',
+        'approvedAt': FieldValue.serverTimestamp(),
+        'reviewedBy': currentUser.uid,
+      });
+
+      // Update the room - ONLY these fields, nothing else
+      batch.update(roomDoc.reference, {
+        'ownerId': request.ownerId,
+        'creationType': 'owner_created',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+      print('✅ Ownership request approved. Room owner set to: ${request.ownerId}');
+
+      // Clear cache to reflect changes
+      clearCache();
+
+      // Notify the owner about approval
+      await _notificationService.sendOwnershipApprovedNotification(
+        roomId: request.roomId,
+        roomName: roomData['name'] ?? 'Unknown Room',
+        ownerId: request.ownerId,
+      );
+
+      return true;
+    } catch (e) {
+      print('❌ Error approving ownership request: $e');
+      return false;
+    }
+  }
+
+  /// Reject ownership request
+  Future<bool> rejectOwnershipRequest(String requestId) async {
+    final currentUser = AuthService().currentUser;
+    if (currentUser == null) return false;
+
+    try {
+      final requestDoc = await _firestore
+          .collection(_ownershipRequestsCollection)
+          .doc(requestId)
+          .get();
+      
+      if (!requestDoc.exists) {
+        print('❌ Ownership request not found');
+        return false;
+      }
+
+      final request = RoomOwnershipRequestModel.fromFirestore(requestDoc);
+      
+      if (!request.isPending) {
+        print('❌ Request is not pending');
+        return false;
+      }
+
+      // Verify current user is room creator
+      final roomDoc = await _firestore.collection(_collection).doc(request.roomId).get();
+      if (!roomDoc.exists) return false;
+
+      final creatorId = roomDoc.data()?['createdBy'];
+      if (creatorId != currentUser.uid) {
+        print('❌ Only room creator can reject ownership requests');
+        return false;
+      }
+
+      // Update the request
+      await requestDoc.reference.update({
+        'status': 'rejected',
+        'rejectedAt': FieldValue.serverTimestamp(),
+        'reviewedBy': currentUser.uid,
+      });
+
+      print('✅ Ownership request rejected');
+
+      // Notify the owner about rejection
+      await _notificationService.sendOwnershipRejectedNotification(
+        roomId: request.roomId,
+        roomName: roomDoc.data()?['name'] ?? 'Unknown Room',
+        ownerId: request.ownerId,
+      );
+
+      return true;
+    } catch (e) {
+      print('❌ Error rejecting ownership request: $e');
+      return false;
+    }
+  }
+
+  /// Get pending ownership requests for a room (for room admin)
+  Future<List<RoomOwnershipRequestModel>> getPendingOwnershipRequests(String roomId) async {
+    try {
+      final query = await _firestore
+          .collection(_ownershipRequestsCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('status', isEqualTo: 'pending')
+          .orderBy('requestedAt', descending: true)
+          .get();
+
+      return query.docs
+          .map((doc) => RoomOwnershipRequestModel.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      print('❌ Error getting pending ownership requests: $e');
+      return [];
+    }
+  }
+
+  /// Get ownership requests made by current user
+  Future<List<RoomOwnershipRequestModel>> getMyOwnershipRequests() async {
+    final user = AuthService().currentUser;
+    if (user == null) return [];
+
+    try {
+      final query = await _firestore
+          .collection(_ownershipRequestsCollection)
+          .where('ownerId', isEqualTo: user.uid)
+          .orderBy('requestedAt', descending: true)
+          .get();
+
+      return query.docs
+          .map((doc) => RoomOwnershipRequestModel.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      print('❌ Error getting my ownership requests: $e');
+      return [];
+    }
+  }
+
+  /// Stream of pending ownership requests for rooms where current user is admin
+  Stream<List<RoomOwnershipRequestModel>> streamPendingOwnershipRequestsForAdmin() {
+    final user = AuthService().currentUser;
+    if (user == null) return Stream.value([]);
+
+    // First get rooms where user is creator, then get pending requests for those
+    return _firestore
+        .collection(_collection)
+        .where('createdBy', isEqualTo: user.uid)
+        .snapshots()
+        .asyncMap((roomsSnapshot) async {
+      if (roomsSnapshot.docs.isEmpty) return <RoomOwnershipRequestModel>[];
+
+      final roomIds = roomsSnapshot.docs.map((d) => d.id).toList();
+      
+      // Get pending requests for all rooms user created
+      final List<RoomOwnershipRequestModel> allRequests = [];
+      for (final roomId in roomIds) {
+        final requests = await getPendingOwnershipRequests(roomId);
+        allRequests.addAll(requests);
+      }
+      
+      return allRequests;
+    });
+  }
+
+  /// Check if room has an owner
+  Future<bool> roomHasOwner(String roomId) async {
+    try {
+      final roomDoc = await _firestore.collection(_collection).doc(roomId).get();
+      if (!roomDoc.exists) return false;
+      return roomDoc.data()?['ownerId'] != null;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get room owner details
+  Future<Map<String, dynamic>?> getRoomOwnerDetails(String roomId) async {
+    try {
+      final roomDoc = await _firestore.collection(_collection).doc(roomId).get();
+      if (!roomDoc.exists) return null;
+      
+      final ownerId = roomDoc.data()?['ownerId'];
+      if (ownerId == null) return null;
+
+      final ownerDoc = await _firestore.collection('users').doc(ownerId).get();
+      if (!ownerDoc.exists) return null;
+
+      return {'id': ownerId, ...ownerDoc.data()!};
+    } catch (e) {
+      print('❌ Error getting room owner details: $e');
+      return null;
+    }
+  }
+
+  // ============================================================
+  // STEP-4: OWNER-CREATED ROOMS + JOIN REQUESTS
+  // ============================================================
+
+  /// Create a room as an owner (roomType = owner_created, ownerId set directly)
+  /// This is different from createGroup which creates user-owned rooms
+  Future<String?> createOwnerRoom({
+    required String name,
+    required String description,
+    required String location,
+    double? lat,
+    double? lng,
+    required int maxMembers,
+    required double rentAmount,
+    required String rentCurrency,
+    required double advanceAmount,
+    required String roomType,
+    required List<String> amenities,
+    List<File> imageFiles = const [],
+    List<XFile> webPickedFiles = const [],
+  }) async {
+    final user = AuthService().currentUser;
+    if (user == null) throw Exception('Not authenticated');
+
+    // Check if user already has a room
+    final canCreate = await canUserCreateGroup();
+    if (!canCreate) {
+      throw Exception('You can only create or join one group at a time');
+    }
+
+    final docRef = _firestore.collection(_collection).doc();
+    final List<String> imageUrls = [];
+
+    // Upload images
+    if (!kIsWeb && imageFiles.isNotEmpty) {
+      for (var index = 0; index < imageFiles.length; index++) {
+        final file = imageFiles[index];
+        final url = await _cloudinary.uploadFile(
+          file: file,
+          folder: CloudinaryFolder.groups,
+          publicId: 'group_${docRef.id}_${index + 1}',
+          context: {'groupId': docRef.id, 'createdBy': user.uid},
+        );
+        if (url != null) {
+          imageUrls.add(url);
+        }
+      }
+    } else if (kIsWeb && webPickedFiles.isNotEmpty) {
+      for (var index = 0; index < webPickedFiles.length; index++) {
+        final image = webPickedFiles[index];
+        final bytes = await image.readAsBytes();
+        final url = await _cloudinary.uploadBytes(
+          bytes: bytes,
+          fileName: image.name,
+          folder: CloudinaryFolder.groups,
+          publicId: 'group_${docRef.id}_${index + 1}',
+          context: {'groupId': docRef.id, 'createdBy': user.uid},
+        );
+        if (url != null) {
+          imageUrls.add(url);
+        }
+      }
+    }
+
+    final rentDetails = {
+      'amount': rentAmount,
+      'currency': rentCurrency,
+      'advanceAmount': advanceAmount,
+    };
+
+    final data = {
+      'id': docRef.id,
+      'name': name.trim(),
+      'description': description.trim(),
+      'location': location.trim(),
+      'lat': lat,
+      'lng': lng,
+      'memberCount': 0, // Owner-created rooms start empty
+      'maxMembers': maxMembers,
+      'rent': rentDetails,
+      'rentAmount': rentAmount,
+      'rentCurrency': rentCurrency,
+      'advanceAmount': advanceAmount,
+      'roomType': roomType,
+      'amenities': amenities,
+      'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : null,
+      'images': imageUrls,
+      'imageCount': imageUrls.length,
+      'createdBy': user.uid,
+      'members': [], // No members initially (owner is NOT a roommate)
+      'isActive': true,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      // === OWNER-CREATED ROOM FIELDS ===
+      'status': 'active',
+      'isPublic': true,
+      'creationType': 'owner_created',
+      'ownerId': user.uid, // Owner set directly
+    };
+
+    await docRef.set(data);
+    
+    print('✅ Owner-created room: ${docRef.id}');
+    clearCache();
+    
+    return docRef.id;
+  }
+
+  /// Check if user can request to join a room
+  Future<Map<String, dynamic>> canRequestToJoin(String roomId) async {
+    final user = AuthService().currentUser;
+    if (user == null) {
+      return {'canJoin': false, 'reason': 'Not authenticated'};
+    }
+
+    try {
+      final roomDoc = await _firestore.collection(_collection).doc(roomId).get();
+      if (!roomDoc.exists) {
+        return {'canJoin': false, 'reason': 'Room not found'};
+      }
+
+      final roomData = roomDoc.data()!;
+
+      // Check room is active and public
+      if (roomData['status'] != 'active') {
+        return {'canJoin': false, 'reason': 'Room is not active'};
+      }
+      if (roomData['isPublic'] != true) {
+        return {'canJoin': false, 'reason': 'Room is not public'};
+      }
+
+      // Check user is not the owner
+      if (roomData['ownerId'] == user.uid) {
+        return {'canJoin': false, 'reason': 'You are the owner of this room'};
+      }
+
+      // Check user is not already a member - query USER_ROOM_LINK
+      final existingMembership = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('userId', isEqualTo: user.uid)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+      
+      if (existingMembership.docs.isNotEmpty) {
+        return {'canJoin': false, 'reason': 'You are already a member'};
+      }
+
+      // Check user doesn't have a pending request
+      final existingRequest = await _firestore
+          .collection(_joinRequestsCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('userId', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get();
+
+      if (existingRequest.docs.isNotEmpty) {
+        return {'canJoin': false, 'reason': 'You already have a pending request'};
+      }
+
+      // Check room is not full - query USER_ROOM_LINK for actual count
+      final maxMembers = roomData['maxMembers'] ?? 4;
+      final activeMembersQuery = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('isActive', isEqualTo: true)
+          .get();
+      final currentMemberCount = activeMembersQuery.docs.length;
+      
+      if (currentMemberCount >= maxMembers) {
+        return {'canJoin': false, 'reason': 'Room is full'};
+      }
+
+      return {'canJoin': true, 'reason': null};
+    } catch (e) {
+      print('❌ Error checking join eligibility: $e');
+      return {'canJoin': false, 'reason': 'Error checking eligibility'};
+    }
+  }
+
+  /// Request to join a room
+  /// RULE: Do NOT create USER_ROOM_LINK yet - only create join request
+  Future<String?> requestToJoinRoom(String roomId) async {
+    final user = AuthService().currentUser;
+    if (user == null) return null;
+
+    try {
+      // Verify user can request to join
+      final eligibility = await canRequestToJoin(roomId);
+      if (eligibility['canJoin'] != true) {
+        print('❌ Cannot request to join: ${eligibility['reason']}');
+        return null;
+      }
+
+      // Create join request
+      final requestDoc = _firestore.collection(_joinRequestsCollection).doc();
+      final requestData = {
+        'roomId': roomId,
+        'userId': user.uid,
+        'status': 'pending',
+        'requestedAt': FieldValue.serverTimestamp(),
+        'reviewedAt': null,
+        'reviewedBy': null,
+      };
+
+      await requestDoc.set(requestData);
+      print('✅ Join request created: ${requestDoc.id}');
+
+      // Notify room owner
+      final roomDoc = await _firestore.collection(_collection).doc(roomId).get();
+      if (roomDoc.exists) {
+        final ownerId = roomDoc.data()?['ownerId'];
+        final roomName = roomDoc.data()?['name'] ?? 'Unknown Room';
+        if (ownerId != null) {
+          await _notificationService.sendJoinRequestNotification(
+            roomId: roomId,
+            roomName: roomName,
+            ownerId: ownerId,
+            requesterId: user.uid,
+          );
+        }
+      }
+
+      return requestDoc.id;
+    } catch (e) {
+      print('❌ Error creating join request: $e');
+      return null;
+    }
+  }
+
+  /// Approve join request (owner only) - STEP-4
+  /// CRITICAL: Atomic batch - create USER_ROOM_LINK and update request
+  Future<bool> approveOwnerJoinRequest(String requestId) async {
+    final currentUser = AuthService().currentUser;
+    if (currentUser == null) return false;
+
+    try {
+      // Get the request
+      final requestDoc = await _firestore
+          .collection(_joinRequestsCollection)
+          .doc(requestId)
+          .get();
+      
+      if (!requestDoc.exists) {
+        print('❌ Join request not found');
+        return false;
+      }
+
+      final request = RoomJoinRequestModel.fromFirestore(requestDoc);
+      
+      if (!request.isPending) {
+        print('❌ Request is not pending');
+        return false;
+      }
+
+      // Verify current user is room owner
+      final roomDoc = await _firestore.collection(_collection).doc(request.roomId).get();
+      if (!roomDoc.exists) {
+        print('❌ Room not found');
+        return false;
+      }
+
+      final roomData = roomDoc.data()!;
+      final ownerId = roomData['ownerId'];
+      
+      if (ownerId != currentUser.uid) {
+        print('❌ Only room owner can approve join requests');
+        return false;
+      }
+
+      // Check room is not full - query USER_ROOM_LINK for actual count
+      final maxMembers = roomData['maxMembers'] ?? 4;
+      final activeMembersQuery = await _firestore
+          .collection(_roomMembersCollection)
+          .where('roomId', isEqualTo: request.roomId)
+          .where('isActive', isEqualTo: true)
+          .get();
+      final currentMemberCount = activeMembersQuery.docs.length;
+      
+      if (currentMemberCount >= maxMembers) {
+        print('❌ Room is full');
+        return false;
+      }
+
+      // Use batch to update atomically
+      final batch = _firestore.batch();
+
+      // 1. Update the join request
+      batch.update(requestDoc.reference, {
+        'status': 'approved',
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'reviewedBy': currentUser.uid,
+      });
+
+      // 2. Create USER_ROOM_LINK (room_members record) - SINGLE SOURCE OF TRUTH
+      // NOTE: Do NOT update room.members[] - membership tracked ONLY via room_members
+      final memberDocRef = _firestore.collection(_roomMembersCollection).doc();
+      batch.set(memberDocRef, {
+        'roomId': request.roomId,
+        'userId': request.userId,
+        'role': 'member',
+        'joinedAt': FieldValue.serverTimestamp(),
+        'isActive': true,
+      });
+
+      await batch.commit();
+      print('✅ Join request approved. User ${request.userId} is now a member.');
+
+      // Clear cache
+      clearCache();
+
+      // Notify the user about approval
+      await _notificationService.sendJoinRequestApprovedNotification(
+        roomId: request.roomId,
+        roomName: roomData['name'] ?? 'Unknown Room',
+        userId: request.userId,
+      );
+
+      return true;
+    } catch (e) {
+      print('❌ Error approving join request: $e');
+      return false;
+    }
+  }
+
+  /// Reject join request (owner only) - STEP-4
+  Future<bool> rejectOwnerJoinRequest(String requestId) async {
+    final currentUser = AuthService().currentUser;
+    if (currentUser == null) return false;
+
+    try {
+      final requestDoc = await _firestore
+          .collection(_joinRequestsCollection)
+          .doc(requestId)
+          .get();
+      
+      if (!requestDoc.exists) {
+        print('❌ Join request not found');
+        return false;
+      }
+
+      final request = RoomJoinRequestModel.fromFirestore(requestDoc);
+      
+      if (!request.isPending) {
+        print('❌ Request is not pending');
+        return false;
+      }
+
+      // Verify current user is room owner
+      final roomDoc = await _firestore.collection(_collection).doc(request.roomId).get();
+      if (!roomDoc.exists) return false;
+
+      final ownerId = roomDoc.data()?['ownerId'];
+      if (ownerId != currentUser.uid) {
+        print('❌ Only room owner can reject join requests');
+        return false;
+      }
+
+      // Update the request
+      await requestDoc.reference.update({
+        'status': 'rejected',
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'reviewedBy': currentUser.uid,
+      });
+
+      print('✅ Join request rejected');
+
+      // Notify the user about rejection
+      await _notificationService.sendJoinRequestRejectedNotification(
+        roomId: request.roomId,
+        roomName: roomDoc.data()?['name'] ?? 'Unknown Room',
+        userId: request.userId,
+      );
+
+      return true;
+    } catch (e) {
+      print('❌ Error rejecting join request: $e');
+      return false;
+    }
+  }
+
+  /// Get pending join requests for a room (owner view)
+  Future<List<RoomJoinRequestModel>> getPendingJoinRequests(String roomId) async {
+    try {
+      final query = await _firestore
+          .collection(_joinRequestsCollection)
+          .where('roomId', isEqualTo: roomId)
+          .where('status', isEqualTo: 'pending')
+          .orderBy('requestedAt', descending: true)
+          .get();
+
+      return query.docs
+          .map((doc) => RoomJoinRequestModel.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      print('❌ Error getting pending join requests: $e');
+      return [];
+    }
+  }
+
+  /// Get join requests made by current user
+  Future<List<RoomJoinRequestModel>> getMyJoinRequests() async {
+    final user = AuthService().currentUser;
+    if (user == null) return [];
+
+    try {
+      final query = await _firestore
+          .collection(_joinRequestsCollection)
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('requestedAt', descending: true)
+          .get();
+
+      return query.docs
+          .map((doc) => RoomJoinRequestModel.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      print('❌ Error getting my join requests: $e');
+      return [];
+    }
+  }
+
+  /// Stream of pending join requests for rooms where current user is owner
+  Stream<List<RoomJoinRequestModel>> streamPendingJoinRequestsForOwner() {
+    final user = AuthService().currentUser;
+    if (user == null) return Stream.value([]);
+
+    // Get rooms where user is owner, then get pending requests
+    return _firestore
+        .collection(_collection)
+        .where('ownerId', isEqualTo: user.uid)
+        .snapshots()
+        .asyncMap((roomsSnapshot) async {
+      if (roomsSnapshot.docs.isEmpty) return <RoomJoinRequestModel>[];
+
+      final roomIds = roomsSnapshot.docs.map((d) => d.id).toList();
+      
+      final List<RoomJoinRequestModel> allRequests = [];
+      for (final roomId in roomIds) {
+        final requests = await getPendingJoinRequests(roomId);
+        allRequests.addAll(requests);
+      }
+      
+      return allRequests;
+    });
+  }
+
+  /// Check if current user is the owner of a room
+  Future<bool> isRoomOwner(String roomId) async {
+    final user = AuthService().currentUser;
+    if (user == null) return false;
+
+    try {
+      final roomDoc = await _firestore.collection(_collection).doc(roomId).get();
+      if (!roomDoc.exists) return false;
+      return roomDoc.data()?['ownerId'] == user.uid;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get owner-created public rooms that user can join
+  Future<List<Map<String, dynamic>>> getAvailableOwnerRooms() async {
+    final user = AuthService().currentUser;
+    if (user == null) return [];
+
+    try {
+      final query = await _firestore
+          .collection(_collection)
+          .where('status', isEqualTo: 'active')
+          .where('isPublic', isEqualTo: true)
+          .where('creationType', isEqualTo: 'owner_created')
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .get();
+
+      // Filter out rooms where user is owner or already a member
+      return query.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .where((room) {
+            if (room['ownerId'] == user.uid) return false;
+            final members = List<String>.from(room['members'] ?? []);
+            return !members.contains(user.uid);
+          })
+          .toList();
+    } catch (e) {
+      print('❌ Error getting available owner rooms: $e');
+      return [];
+    }
+  }
 }
+

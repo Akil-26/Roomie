@@ -5,12 +5,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:roomie/presentation/screens/groups/join_requests_s.dart';
+import 'package:roomie/presentation/screens/groups/owner_join_requests_s.dart';
+import 'package:roomie/presentation/screens/groups/ownership_requests_s.dart';
+import 'package:roomie/presentation/screens/groups/room_payments_s.dart';
+import 'package:roomie/presentation/screens/groups/owner_payment_dashboard_s.dart';
 import 'package:roomie/presentation/screens/profile/other_user_profile_s.dart';
 import 'package:roomie/data/datasources/firestore_service.dart';
+import 'package:roomie/data/datasources/room_payment_service.dart';
+import 'package:roomie/data/datasources/groups_service.dart';
 
 class CurrentGroupDetailScreen extends StatefulWidget {
   final Map<String, dynamic> group;
-  final VoidCallback? onLeaveGroup;
+  final Future<void> Function()? onLeaveGroup;
 
   const CurrentGroupDetailScreen({
     super.key,
@@ -29,13 +35,67 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
   int _currentImageIndex = 0;
   final String _currentUserId = FirebaseAuth.instance.currentUser!.uid;
   final FirestoreService _firestoreService = FirestoreService();
+  final RoomPaymentService _paymentService = RoomPaymentService();
+  final GroupsService _groupsService = GroupsService();
   final Map<String, bool> _followingStatus = {};
+  
+  // Step-3: Room owner and payment eligibility state
+  bool _isRoomOwner = false;
+  bool _canMakePayment = false;
+  bool _isRoomCreator = false;
+  int _pendingOwnershipRequests = 0;
+  // Step-4: Join requests for owner-created rooms
+  int _pendingJoinRequests = 0;
 
   @override
   void initState() {
     super.initState();
     _membersFuture = _fetchGroupMembers();
     _membersFuture.then((members) => _checkFollowingStatus(members));
+    _loadOwnershipAndPaymentState();
+  }
+
+  /// Load ownership and payment eligibility state for Step-3
+  Future<void> _loadOwnershipAndPaymentState() async {
+    try {
+      final roomId = widget.group['id'];
+      final creatorId = widget.group['createdBy'];
+      
+      // Check if current user is room creator (admin)
+      final isCreator = creatorId == _currentUserId;
+      
+      // Check if current user is room owner
+      final isOwner = await _paymentService.isRoomOwner(roomId);
+      
+      // Check if payments can be made (room has owner)
+      final canPay = await _paymentService.canMakePayment(roomId);
+      
+      // Get pending ownership requests count (for creator)
+      int pendingRequests = 0;
+      if (isCreator) {
+        final requests = await _groupsService.getPendingOwnershipRequests(roomId);
+        pendingRequests = requests.length;
+      }
+      
+      // Step-4: Get pending join requests count (for owner)
+      int pendingJoins = 0;
+      if (isOwner) {
+        final joinRequests = await _groupsService.getPendingJoinRequests(roomId);
+        pendingJoins = joinRequests.length;
+      }
+      
+      if (mounted) {
+        setState(() {
+          _isRoomCreator = isCreator;
+          _isRoomOwner = isOwner;
+          _canMakePayment = canPay;
+          _pendingOwnershipRequests = pendingRequests;
+          _pendingJoinRequests = pendingJoins;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading ownership state: $e');
+    }
   }
 
   void _refreshFollowingStatus() {
@@ -210,7 +270,7 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
     return showDialog<void>(
       context: context,
       barrierDismissible: false, // user must tap button!
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text('Leave Group'),
           content: const SingleChildScrollView(
@@ -224,19 +284,24 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
             TextButton(
               child: const Text('Cancel'),
               onPressed: () {
-                Navigator.of(context).pop();
+                Navigator.of(dialogContext).pop();
               },
             ),
             TextButton(
               child: const Text('Leave'),
-              onPressed: () {
+              onPressed: () async {
+                // Close the dialog first
+                Navigator.of(dialogContext).pop();
+                
+                // Execute the leave action
                 if (widget.onLeaveGroup != null) {
-                  widget.onLeaveGroup!();
+                  await widget.onLeaveGroup!();
                 }
-                Navigator.of(context).pop(); // Close the dialog
-                Navigator.of(
-                  context,
-                ).pop(); // Go back from the group detail screen
+                
+                // Navigate back to home after leaving
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
               },
             ),
           ],
@@ -451,6 +516,11 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                     ),
                     SizedBox(height: screenHeight * 0.03),  // 3% gap
                   ],
+                  
+                  // === STEP-3: Quick Actions Section ===
+                  _buildQuickActionsSection(screenWidth, screenHeight, colorScheme, textTheme),
+                  SizedBox(height: screenHeight * 0.03),  // 3% gap
+                  
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -762,6 +832,260 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
               }).toList(),
         );
       },
+    );
+  }
+
+  /// STEP-3: Build quick actions section for payments and ownership
+  Widget _buildQuickActionsSection(
+    double screenWidth,
+    double screenHeight,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    final roomId = widget.group['id'] as String;
+    final roomName = widget.group['name'] as String? ?? 'Room';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Quick Actions',
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: colorScheme.onSurface,
+          ) ?? TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        SizedBox(height: screenHeight * 0.015),
+        
+        Row(
+          children: [
+            // Payment button (for all members)
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.payment,
+                title: _isRoomOwner ? 'Payment Dashboard' : 'Pay Rent',
+                subtitle: _isRoomOwner 
+                    ? 'View all payments' 
+                    : (_canMakePayment ? 'Pay to owner' : 'No owner yet'),
+                color: Colors.green,
+                isEnabled: _canMakePayment || _isRoomOwner,
+                onTap: () {
+                  if (_isRoomOwner) {
+                    // Owner sees payment dashboard
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => OwnerPaymentDashboardScreen(
+                          roomId: roomId,
+                          roomName: roomName,
+                        ),
+                      ),
+                    );
+                  } else if (_canMakePayment) {
+                    // Roommate sees payment screen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RoomPaymentsScreen(
+                          roomId: roomId,
+                          roomName: roomName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+                screenWidth: screenWidth,
+                screenHeight: screenHeight,
+                colorScheme: colorScheme,
+                textTheme: textTheme,
+              ),
+            ),
+            SizedBox(width: screenWidth * 0.03),
+            
+            // Ownership requests button (for room creator only)
+            if (_isRoomCreator)
+              Expanded(
+                child: Stack(
+                  children: [
+                    _buildQuickActionCard(
+                      icon: Icons.verified_user,
+                      title: 'Ownership',
+                      subtitle: 'Manage requests',
+                      color: Colors.blue,
+                      isEnabled: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => OwnershipRequestsScreen(
+                              roomId: roomId,
+                              roomName: roomName,
+                            ),
+                          ),
+                        ).then((_) => _loadOwnershipAndPaymentState());
+                      },
+                      screenWidth: screenWidth,
+                      screenHeight: screenHeight,
+                      colorScheme: colorScheme,
+                      textTheme: textTheme,
+                    ),
+                    // Badge for pending requests
+                    if (_pendingOwnershipRequests > 0)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$_pendingOwnershipRequests',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        
+        // Step-4: Join Requests row for room owner
+        if (_isRoomOwner) ...[
+          SizedBox(height: screenHeight * 0.015),
+          Stack(
+            children: [
+              _buildQuickActionCard(
+                icon: Icons.person_add,
+                title: 'Join Requests',
+                subtitle: _pendingJoinRequests > 0 
+                    ? '$_pendingJoinRequests pending' 
+                    : 'Manage requests',
+                color: Colors.purple,
+                isEnabled: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => OwnerJoinRequestsScreen(
+                        roomId: roomId,
+                        roomName: roomName,
+                      ),
+                    ),
+                  ).then((_) => _loadOwnershipAndPaymentState());
+                },
+                screenWidth: screenWidth,
+                screenHeight: screenHeight,
+                colorScheme: colorScheme,
+                textTheme: textTheme,
+              ),
+              // Badge for pending join requests
+              if (_pendingJoinRequests > 0)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$_pendingJoinRequests',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildQuickActionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required bool isEnabled,
+    required VoidCallback onTap,
+    required double screenWidth,
+    required double screenHeight,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+  }) {
+    return InkWell(
+      onTap: isEnabled ? onTap : null,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: EdgeInsets.all(screenWidth * 0.04),
+        decoration: BoxDecoration(
+          color: isEnabled 
+              ? colorScheme.surface 
+              : colorScheme.surfaceContainerHighest.withAlpha(100),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isEnabled ? color.withAlpha(100) : colorScheme.outlineVariant,
+          ),
+          boxShadow: isEnabled ? [
+            BoxShadow(
+              color: color.withAlpha(20),
+              spreadRadius: 1,
+              blurRadius: 5,
+              offset: const Offset(0, 2),
+            ),
+          ] : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isEnabled ? color.withAlpha(30) : Colors.grey.withAlpha(30),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                color: isEnabled ? color : Colors.grey,
+                size: screenWidth * 0.06,
+              ),
+            ),
+            SizedBox(height: screenHeight * 0.01),
+            Text(
+              title,
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: isEnabled ? colorScheme.onSurface : Colors.grey,
+              ),
+            ),
+            SizedBox(height: screenHeight * 0.003),
+            Text(
+              subtitle,
+              style: textTheme.bodySmall?.copyWith(
+                color: isEnabled ? colorScheme.onSurfaceVariant : Colors.grey,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

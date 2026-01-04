@@ -244,6 +244,60 @@ class JoinRequestData {
   bool get isRejected => status == 'rejected';
 }
 
+/// Room status enum for persistence
+/// - active: Room is active and can be joined
+/// - inactive: Room is deactivated (soft deleted)
+enum RoomStatus {
+  active,
+  inactive;
+
+  String get value {
+    switch (this) {
+      case RoomStatus.active:
+        return 'active';
+      case RoomStatus.inactive:
+        return 'inactive';
+    }
+  }
+
+  static RoomStatus fromString(String? value) {
+    switch (value?.toLowerCase()) {
+      case 'inactive':
+        return RoomStatus.inactive;
+      case 'active':
+      default:
+        return RoomStatus.active;
+    }
+  }
+}
+
+/// Room creation type enum
+/// - userCreated: Room created by a regular user (roommate)
+/// - ownerCreated: Room created by property owner (future feature)
+enum RoomCreationType {
+  userCreated,
+  ownerCreated;
+
+  String get value {
+    switch (this) {
+      case RoomCreationType.userCreated:
+        return 'user_created';
+      case RoomCreationType.ownerCreated:
+        return 'owner_created';
+    }
+  }
+
+  static RoomCreationType fromString(String? value) {
+    switch (value?.toLowerCase()) {
+      case 'owner_created':
+        return RoomCreationType.ownerCreated;
+      case 'user_created':
+      default:
+        return RoomCreationType.userCreated;
+    }
+  }
+}
+
 class GroupModel {
   final String id;
   final String name;
@@ -261,6 +315,22 @@ class GroupModel {
   final DateTime? updatedAt;
   final List<MemberData> members; // All members with roles
   final List<JoinRequestData> joinRequests; // Pending join requests
+  
+  // === NEW FIELDS FOR ROOM PERSISTENCE ===
+  // These fields ensure rooms exist independently of members
+  
+  /// Room status: 'active' or 'inactive'. 
+  /// IMPORTANT: Rooms should NEVER be auto-deleted. Only status changes.
+  final RoomStatus status;
+  
+  /// Whether this room is publicly visible in available rooms list
+  final bool isPublic;
+  
+  /// Type of room creation: 'user_created' or 'owner_created'
+  final RoomCreationType creationType;
+  
+  /// Owner ID (nullable for now, will be used for owner-merge feature later)
+  final String? ownerId;
 
   GroupModel({
     required this.id,
@@ -279,6 +349,11 @@ class GroupModel {
     this.updatedAt,
     required this.members,
     required this.joinRequests,
+    // New fields with defaults for backward compatibility
+    this.status = RoomStatus.active,
+    this.isPublic = true,
+    this.creationType = RoomCreationType.userCreated,
+    this.ownerId,
   });
 
   factory GroupModel.fromMap(Map<String, dynamic> map, String id) {
@@ -334,6 +409,11 @@ class GroupModel {
           (map['joinRequests'] as List<dynamic>? ?? [])
               .map((r) => JoinRequestData.fromMap(r))
               .toList(),
+      // New fields for room persistence
+      status: RoomStatus.fromString(map['status']),
+      isPublic: map['isPublic'] ?? true,
+      creationType: RoomCreationType.fromString(map['creationType']),
+      ownerId: map['ownerId'],
     );
   }
 
@@ -359,6 +439,11 @@ class GroupModel {
       'updatedAt': updatedAt,
       'members': members.map((m) => m.toMap()).toList(),
       'joinRequests': joinRequests.map((r) => r.toMap()).toList(),
+      // New fields for room persistence
+      'status': status.value,
+      'isPublic': isPublic,
+      'creationType': creationType.value,
+      'ownerId': ownerId,
     };
   }
 
@@ -379,6 +464,11 @@ class GroupModel {
     DateTime? updatedAt,
     List<MemberData>? members,
     List<JoinRequestData>? joinRequests,
+    // New fields
+    RoomStatus? status,
+    bool? isPublic,
+    RoomCreationType? creationType,
+    String? ownerId,
   }) {
     return GroupModel(
       id: id ?? this.id,
@@ -397,6 +487,11 @@ class GroupModel {
       updatedAt: updatedAt ?? this.updatedAt,
       members: members ?? this.members,
       joinRequests: joinRequests ?? this.joinRequests,
+      // New fields
+      status: status ?? this.status,
+      isPublic: isPublic ?? this.isPublic,
+      creationType: creationType ?? this.creationType,
+      ownerId: ownerId ?? this.ownerId,
     );
   }
 
@@ -425,6 +520,18 @@ class GroupModel {
   int get pendingRequestsCount => joinRequests.where((r) => r.isPending).length;
 
   List<MemberData> get adminMembers => members.where((m) => m.isAdmin).toList();
+
+  /// Check if room is active and visible
+  bool get isActive => status == RoomStatus.active;
+  
+  /// Check if room is visible in available rooms list
+  bool get isVisible => isActive && isPublic;
+  
+  /// Check if room was created by a property owner
+  bool get isOwnerCreated => creationType == RoomCreationType.ownerCreated;
+  
+  /// Check if room has an assigned owner
+  bool get hasOwner => ownerId != null && ownerId!.isNotEmpty;
 
   MemberData? get primaryAdmin => members.firstWhere(
     (m) => m.isAdmin && m.userId == createdBy,
@@ -474,6 +581,11 @@ class GroupModel {
       'imageId': imageId, // Store MongoDB image reference in Firestore
       'members': members.map((m) => m.toMap()).toList(),
       'joinRequests': joinRequests.map((r) => r.toMap()).toList(),
+      // New fields for room persistence
+      'status': status.value,
+      'isPublic': isPublic,
+      'creationType': creationType.value,
+      'ownerId': ownerId,
     };
   }
 
@@ -531,6 +643,11 @@ class GroupModel {
           (data['joinRequests'] as List<dynamic>? ?? [])
               .map((r) => JoinRequestData.fromMap(r))
               .toList(),
+      // New fields for room persistence
+      status: RoomStatus.fromString(data['status']),
+      isPublic: data['isPublic'] ?? true,
+      creationType: RoomCreationType.fromString(data['creationType']),
+      ownerId: data['ownerId'],
     );
   }
 

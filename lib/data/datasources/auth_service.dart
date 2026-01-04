@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firestore_service.dart';
+import 'groups_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, TargetPlatform, defaultTargetPlatform;
@@ -316,11 +317,26 @@ class AuthService {
   ///  Sign out from Firebase Auth and Google Sign-In
   Future<void> signOut() async {
     try {
+      // Clear GroupsService cache before sign out to prevent stale data
+      // This must happen BEFORE sign out so subsequent logins get fresh data
+      _clearAllCaches();
+      
       // Sign out from Firebase Auth
       await _auth.signOut();
       print('✅ Successfully signed out');
     } catch (e) {
       print('❌ Sign-out Error: $e');
+    }
+  }
+  
+  /// Clear all service caches on logout/account switch
+  void _clearAllCaches() {
+    try {
+      // Clear GroupsService cache to prevent stale data on next login
+      GroupsService().clearCache();
+      print('🧹 Cleared all service caches on logout');
+    } catch (e) {
+      print('⚠️ Error clearing caches: $e');
     }
   }
 }

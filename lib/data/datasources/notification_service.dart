@@ -503,4 +503,167 @@ class NotificationService {
       },
     );
   }
+
+  // ============================================================
+  // STEP-2: OWNERSHIP CLAIM NOTIFICATIONS
+  // ============================================================
+
+  /// Notify room creator about an ownership claim request
+  Future<void> sendOwnershipClaimNotification({
+    required String roomId,
+    required String roomName,
+    required String ownerId,
+    required String creatorId,
+    required String requestId,
+  }) async {
+    try {
+      await sendUserNotification(
+        userId: creatorId,
+        title: 'Ownership Claim Request',
+        body: 'Someone wants to claim ownership of "$roomName"',
+        type: 'ownership_claim',
+        data: {
+          'roomId': roomId,
+          'roomName': roomName,
+          'ownerId': ownerId,
+          'requestId': requestId,
+          'route': '/room/$roomId/ownership-requests',
+        },
+      );
+      print('✅ Ownership claim notification sent to creator: $creatorId');
+    } catch (e) {
+      print('❌ Error sending ownership claim notification: $e');
+    }
+  }
+
+  /// Notify owner that their claim was approved
+  Future<void> sendOwnershipApprovedNotification({
+    required String roomId,
+    required String roomName,
+    required String ownerId,
+  }) async {
+    try {
+      await sendUserNotification(
+        userId: ownerId,
+        title: 'Ownership Claim Approved',
+        body: 'Your ownership claim for "$roomName" has been approved!',
+        type: 'ownership_approved',
+        data: {
+          'roomId': roomId,
+          'roomName': roomName,
+          'route': '/room/$roomId',
+        },
+      );
+      print('✅ Ownership approved notification sent to owner: $ownerId');
+    } catch (e) {
+      print('❌ Error sending ownership approved notification: $e');
+    }
+  }
+
+  /// Notify owner that their claim was rejected
+  Future<void> sendOwnershipRejectedNotification({
+    required String roomId,
+    required String roomName,
+    required String ownerId,
+  }) async {
+    try {
+      await sendUserNotification(
+        userId: ownerId,
+        title: 'Ownership Claim Rejected',
+        body: 'Your ownership claim for "$roomName" was not approved.',
+        type: 'ownership_rejected',
+        data: {
+          'roomId': roomId,
+          'roomName': roomName,
+        },
+      );
+      print('✅ Ownership rejected notification sent to owner: $ownerId');
+    } catch (e) {
+      print('❌ Error sending ownership rejected notification: $e');
+    }
+  }
+
+  // ============================================================
+  // STEP-4: JOIN REQUEST NOTIFICATIONS
+  // ============================================================
+
+  /// Notify owner that someone wants to join their room
+  Future<void> sendJoinRequestNotification({
+    required String roomId,
+    required String roomName,
+    required String ownerId,
+    required String requesterId,
+  }) async {
+    try {
+      // Get requester name
+      final requesterDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(requesterId)
+          .get();
+      final requesterName = requesterDoc.data()?['name'] ?? 'Someone';
+
+      await sendUserNotification(
+        userId: ownerId,
+        title: 'New Join Request',
+        body: '$requesterName wants to join "$roomName"',
+        type: 'join_request',
+        data: {
+          'roomId': roomId,
+          'roomName': roomName,
+          'requesterId': requesterId,
+          'route': '/room/$roomId/join-requests',
+        },
+      );
+      print('✅ Join request notification sent to owner: $ownerId');
+    } catch (e) {
+      print('❌ Error sending join request notification: $e');
+    }
+  }
+
+  /// Notify user that their join request was approved
+  Future<void> sendJoinRequestApprovedNotification({
+    required String roomId,
+    required String roomName,
+    required String userId,
+  }) async {
+    try {
+      await sendUserNotification(
+        userId: userId,
+        title: 'Join Request Approved',
+        body: 'You are now a member of "$roomName"!',
+        type: 'join_approved',
+        data: {
+          'roomId': roomId,
+          'roomName': roomName,
+          'route': '/room/$roomId',
+        },
+      );
+      print('✅ Join approved notification sent to user: $userId');
+    } catch (e) {
+      print('❌ Error sending join approved notification: $e');
+    }
+  }
+
+  /// Notify user that their join request was rejected
+  Future<void> sendJoinRequestRejectedNotification({
+    required String roomId,
+    required String roomName,
+    required String userId,
+  }) async {
+    try {
+      await sendUserNotification(
+        userId: userId,
+        title: 'Join Request Declined',
+        body: 'Your request to join "$roomName" was not approved.',
+        type: 'join_rejected',
+        data: {
+          'roomId': roomId,
+          'roomName': roomName,
+        },
+      );
+      print('✅ Join rejected notification sent to user: $userId');
+    } catch (e) {
+      print('❌ Error sending join rejected notification: $e');
+    }
+  }
 }
