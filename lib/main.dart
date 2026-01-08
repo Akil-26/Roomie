@@ -19,6 +19,7 @@ import 'package:roomie/data/datasources/local_sms_transaction_store.dart';
 import 'package:roomie/data/datasources/sms_transaction_service.dart';
 import 'package:roomie/data/datasources/message_cache_service.dart';
 import 'package:roomie/data/datasources/user_cache_service.dart';
+import 'package:roomie/data/datasources/payments/razorpay_service.dart';
 
 // Global navigator key for notification deep-linking
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -181,6 +182,14 @@ void main() async {
     AppLogger.d('🔒 SMS service configured: local-only, hashed raw messages');
   } catch (e) {
     AppLogger.e('❌ SMS service configuration failed: $e');
+  }
+
+  // Initialize Razorpay payment service (TEST MODE - UPI Supported)
+  try {
+    RazorpayService().initialize();
+    AppLogger.d('💳 Razorpay payment service initialized (Test Mode - UPI)');
+  } catch (e) {
+    AppLogger.e('❌ Razorpay initialization failed: $e');
   }
 
   AppLogger.d('🚀 Starting Roomie App (Firestore + Cloudinary mode)...');

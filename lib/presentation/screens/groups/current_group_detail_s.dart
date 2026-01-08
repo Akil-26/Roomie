@@ -13,6 +13,9 @@ import 'package:roomie/presentation/screens/profile/other_user_profile_s.dart';
 import 'package:roomie/data/datasources/firestore_service.dart';
 import 'package:roomie/data/datasources/room_payment_service.dart';
 import 'package:roomie/data/datasources/groups_service.dart';
+import 'package:roomie/presentation/widgets/role_badge.dart';
+import 'package:roomie/presentation/widgets/empty_states.dart';
+import 'package:roomie/presentation/widgets/owner_dashboard.dart';
 
 class CurrentGroupDetailScreen extends StatefulWidget {
   final Map<String, dynamic> group;
@@ -109,16 +112,28 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchGroupMembers() async {
-    final memberIds = List<String>.from(widget.group['members'] ?? []);
-    debugPrint('Group members IDs: $memberIds');
-    if (memberIds.isEmpty) {
+    final roomId = widget.group['id'] as String?;
+    if (roomId == null) {
+      debugPrint('No room ID available');
+      return [];
+    }
+
+    // Step-4: Query room_members collection (USER_ROOM_LINK) - SINGLE SOURCE OF TRUTH
+    // Owner is NOT a member - do NOT include owner in this list
+    final groupsService = GroupsService();
+    final roomMembers = await groupsService.getRoomMembers(roomId);
+    
+    debugPrint('Room members from USER_ROOM_LINK: ${roomMembers.length}');
+    
+    if (roomMembers.isEmpty) {
       return [];
     }
 
     final List<Map<String, dynamic>> membersList = [];
 
-    // Fetch each member individually to ensure we get all data
-    for (final memberId in memberIds) {
+    // Fetch each member's user data
+    for (final roomMember in roomMembers) {
+      final memberId = roomMember.userId;
       try {
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
@@ -132,8 +147,9 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
           memberData.addAll(userDoc.data()!);
         }
 
-        // No fallback to Firebase Auth displayName - only use Firestore data
-        // If username is still empty after fetching from Firestore, it will be handled by _formatMemberDisplayName
+        // Add room membership info
+        memberData['joinedAt'] = roomMember.joinedAt;
+        memberData['membershipId'] = roomMember.id;
 
         debugPrint('Fetched member $memberId: username=${memberData['username']}, name=${memberData['name']}, email=${memberData['email']}');
         membersList.add(memberData);
@@ -272,11 +288,11 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
       barrierDismissible: false, // user must tap button!
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('Leave Group'),
+          title: const Text('Leave Room'),
           content: const SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                Text('Are you sure you want to leave this group?'),
+                Text('Are you sure you want to leave this room?'),
               ],
             ),
           ),
@@ -517,6 +533,23 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                     SizedBox(height: screenHeight * 0.03),  // 3% gap
                   ],
                   
+                  // STEP-5: Your Role indicator
+                  _buildYourRoleCard(screenWidth, screenHeight, colorScheme, textTheme),
+                  SizedBox(height: screenHeight * 0.02),
+                  
+                  // STEP-7: Owner Dashboard (only for room owner)
+                  if (_isRoomOwner) ...[
+                    OwnerDashboardWidget(
+                      roomId: widget.group['id'],
+                      roomName: widget.group['name'] ?? 'Room',
+                      onVisibilityChanged: () {
+                        // Refresh state when visibility changes
+                        _loadOwnershipAndPaymentState();
+                      },
+                    ),
+                    SizedBox(height: screenHeight * 0.02),
+                  ],
+                  
                   // === STEP-3: Quick Actions Section ===
                   _buildQuickActionsSection(screenWidth, screenHeight, colorScheme, textTheme),
                   SizedBox(height: screenHeight * 0.03),  // 3% gap
@@ -703,15 +736,9 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
             ),
           );
         }
+        // STEP-5: Empty state for no members - trust builder
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(
-            child: Text(
-              'No members found.',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          );
+          return const EmptyMembersState();
         }
 
         final members = snapshot.data!;
@@ -778,6 +805,9 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
                           ) ??
                           const TextStyle(fontWeight: FontWeight.w600),
                     ),
+                    // STEP-5: Clear role labels - Roommate badge for all members
+                    // Owner is NEVER in this list (comes from room_members collection)
+                    subtitle: const RoleBadge(role: RoomRole.roommate, compact: true),
                     trailing:
                         isCreator
                             ? Container(
@@ -832,6 +862,49 @@ class _CurrentGroupDetailScreenState extends State<CurrentGroupDetailScreen> {
               }).toList(),
         );
       },
+    );
+  }
+
+  /// STEP-5: Build a card showing the user's role in the room
+  Widget _buildYourRoleCard(
+    double screenWidth,
+    double screenHeight,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    // Determine user's role
+    RoomRole role = _isRoomOwner ? RoomRole.owner : RoomRole.roommate;
+    String roleDescription = _isRoomOwner 
+        ? 'You manage this room and can approve join requests and receive payments.'
+        : 'You are a roommate in this room.';
+    
+    if (_isRoomCreator && !_isRoomOwner) {
+      roleDescription = 'You created this room. Claim ownership to manage payments.';
+    }
+
+    return Container(
+      padding: EdgeInsets.all(screenWidth * 0.04),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isRoomOwner ? Colors.blue.withAlpha(100) : Colors.green.withAlpha(100),
+        ),
+      ),
+      child: Row(
+        children: [
+          RoleBadge(role: role, compact: false),
+          SizedBox(width: screenWidth * 0.03),
+          Expanded(
+            child: Text(
+              roleDescription,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/groups_service.dart';
+import 'package:roomie/presentation/widgets/empty_states.dart';
+import 'package:roomie/presentation/widgets/action_guard.dart';
 
 class AvailableGroupDetailScreen extends StatefulWidget {
   final Map<String, dynamic> group;
@@ -15,15 +17,65 @@ class AvailableGroupDetailScreen extends StatefulWidget {
 }
 
 class _AvailableGroupDetailScreenState
-    extends State<AvailableGroupDetailScreen> {
+    extends State<AvailableGroupDetailScreen> 
+    with WidgetsBindingObserver, ActionGuardMixin {
   final GroupsService _groupsService = GroupsService();
   final AuthService _authService = AuthService();
-  bool _isLoading = false;
   final PageController _pageController = PageController();
   int _currentImageIndex = 0;
+  
+  // STEP-5: Track join eligibility to disable button properly
+  bool _isCheckingEligibility = true;
+  bool _canJoin = true;
+  String _eligibilityReason = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // STEP-6: Register for app lifecycle events
+    WidgetsBinding.instance.addObserver(this);
+    _checkJoinEligibility();
+  }
+
+  // STEP-6: App Background/Resume Safety
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Re-check eligibility when app resumes
+      _checkJoinEligibility();
+    }
+  }
+
+  /// STEP-5: Check if user can join this room (disable button if not allowed)
+  Future<void> _checkJoinEligibility() async {
+    setState(() => _isCheckingEligibility = true);
+    
+    try {
+      final roomId = widget.group['id'];
+      final eligibility = await _groupsService.canRequestToJoin(roomId);
+      
+      if (mounted) {
+        setState(() {
+          _canJoin = eligibility['canJoin'] == true;
+          _eligibilityReason = eligibility['reason'] ?? '';
+          _isCheckingEligibility = false;
+        });
+      }
+    } catch (e) {
+      // STEP-6: Network failure guard - reset state on error
+      if (mounted) {
+        setState(() {
+          _canJoin = true; // Default to allowing join attempt
+          _isCheckingEligibility = false;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
+    // STEP-6: Cleanup lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
   }
@@ -70,70 +122,74 @@ class _AvailableGroupDetailScreenState
   }
 
   Future<void> _requestToJoin() async {
-    if (_isLoading) return;
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final roomId = widget.group['id'];
-      final creationType = widget.group['creationType'] ?? 'user_created';
-      final ownerId = widget.group['ownerId'];
-
-      bool success = false;
-      
-      // STEP-4: Different join flows based on room type
-      if (creationType == 'owner_created' && ownerId != null) {
-        // Owner-created rooms: Request goes to owner for approval
-        // First check eligibility
-        final eligibility = await _groupsService.canRequestToJoin(roomId);
-        if (eligibility['canJoin'] != true) {
-          throw Exception(eligibility['reason'] ?? 'Cannot join this room');
+    // STEP-6: Double-action protection via ActionGuardMixin
+    await guardedAction<void>(
+      'request_to_join',
+      () async {
+        // STEP-6: Defensive assertion - user must be authenticated
+        final currentUser = _authService.currentUser;
+        if (!assertCondition(
+          currentUser != null,
+          context,
+          failureMessage: 'You must be logged in to join a room',
+        )) {
+          return;
         }
-        
-        final requestId = await _groupsService.requestToJoinRoom(roomId);
-        success = requestId != null;
-      } else {
-        // User-created rooms: Use existing join request flow (members approve)
-        success = await _groupsService.sendJoinRequest(roomId);
-      }
 
-      if (success && mounted) {
-        final colorScheme = Theme.of(context).colorScheme;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Join request sent successfully!'),
-            backgroundColor: colorScheme.primary,
-          ),
-        );
-        Navigator.pop(context);
-      } else {
-        throw Exception('Failed to send join request');
-      }
-    } catch (e) {
-      print('Error sending join request: $e');
-      if (mounted) {
-        final colorScheme = Theme.of(context).colorScheme;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: colorScheme.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
+        // STEP-6: Defensive assertion - must be eligible to join
+        if (!assertCondition(
+          _canJoin,
+          context,
+          failureMessage: _eligibilityReason.isNotEmpty 
+              ? _eligibilityReason 
+              : 'You cannot join this room',
+        )) {
+          return;
+        }
+
+        final roomId = widget.group['id'];
+        final creationType = widget.group['creationType'] ?? 'user_created';
+        final ownerId = widget.group['ownerId'];
+
+        bool success = false;
+        
+        // STEP-4: Different join flows based on room type
+        if (creationType == 'owner_created' && ownerId != null) {
+          // Owner-created rooms: Request goes to owner for approval
+          // Re-check eligibility before submit (defensive)
+          final eligibility = await _groupsService.canRequestToJoin(roomId);
+          if (eligibility['canJoin'] != true) {
+            throw Exception(eligibility['reason'] ?? 'Cannot join this room');
+          }
+          
+          final requestId = await _groupsService.requestToJoinRoom(roomId);
+          success = requestId != null;
+        } else {
+          // User-created rooms: Use existing join request flow (members approve)
+          success = await _groupsService.sendJoinRequest(roomId);
+        }
+
+        if (success && mounted) {
+          final colorScheme = Theme.of(context).colorScheme;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Join request sent successfully!'),
+              backgroundColor: colorScheme.primary,
+            ),
+          );
+          Navigator.pop(context);
+        } else {
+          throw Exception('Failed to send join request');
+        }
+      },
+      onError: (e) {
+        // STEP-6: Network failure guard - show error, UI recovers automatically
+        debugPrint('Error sending join request: $e');
+        if (mounted) {
+          showNetworkErrorSnackbar(context, message: 'Error: ${e.toString()}');
+        }
+      },
+    );
   }
 
   @override
@@ -330,6 +386,7 @@ class _AvailableGroupDetailScreenState
           ),
         ],
       ),
+      // STEP-5: Bottom section with flow explanation + join button
       bottomNavigationBar: Container(
         padding: EdgeInsets.fromLTRB(
           screenWidth * 0.05,  // 5% left
@@ -343,41 +400,83 @@ class _AvailableGroupDetailScreenState
             top: BorderSide(color: colorScheme.outlineVariant, width: 1),
           ),
         ),
-        child: SizedBox(
-          width: double.infinity,
-          height: screenHeight * 0.065,  // 6.5% height
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _requestToJoin,
-            style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  _isLoading ? colorScheme.outline : colorScheme.primary,
-              foregroundColor: colorScheme.onPrimary,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              disabledBackgroundColor: colorScheme.outlineVariant,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // STEP-5: Flow explanation text (tiny onboarding)
+            const FlowExplanationCard(
+              icon: Icons.info_outline,
+              text: 'Request to join. Approval required by owner.',
+              color: Colors.blue,
             ),
-            child:
-                _isLoading
-                    ? SizedBox(
-                      height: screenWidth * 0.06,  // 6% size
-                      width: screenWidth * 0.06,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          colorScheme.onPrimary,
-                        ),
-                      ),
-                    )
-                    : const Text(
-                      'Request to Join',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+            SizedBox(height: screenHeight * 0.012),
+            
+            // STEP-5: Show eligibility status if can't join
+            if (!_isCheckingEligibility && !_canJoin) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withAlpha(20),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.hourglass_empty, size: 16, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _eligibilityReason.isNotEmpty 
+                            ? _eligibilityReason 
+                            : 'You cannot join this room at this time.',
+                        style: const TextStyle(fontSize: 12, color: Colors.orange),
                       ),
                     ),
-          ),
+                  ],
+                ),
+              ),
+              SizedBox(height: screenHeight * 0.012),
+            ],
+            
+            SizedBox(
+              width: double.infinity,
+              height: screenHeight * 0.065,  // 6.5% height
+              // STEP-5 & STEP-6: Disable button if pending, member, or action in progress
+              child: ElevatedButton(
+                onPressed: (isActionInProgress('request_to_join') || _isCheckingEligibility || !_canJoin) 
+                    ? null 
+                    : _requestToJoin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: (!_canJoin || isActionInProgress('request_to_join'))
+                      ? colorScheme.outline 
+                      : colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  disabledBackgroundColor: colorScheme.outlineVariant,
+                ),
+                child: isActionInProgress('request_to_join') || _isCheckingEligibility
+                    ? SizedBox(
+                        height: screenWidth * 0.06,  // 6% size
+                        width: screenWidth * 0.06,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            colorScheme.onPrimary,
+                          ),
+                        ),
+                      )
+                    : Text(
+                        _canJoin ? 'Request to Join' : 'Cannot Join',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+              ),
+            ),
+          ],
         ),
       ),
     );

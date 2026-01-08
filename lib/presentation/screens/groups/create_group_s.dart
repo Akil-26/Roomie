@@ -833,9 +833,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
               SizedBox(height: screenHeight * 0.03),
 
-              // Group Name
+              // Room Name
               Text(
-                'Group Name',
+                'Room Name',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -845,7 +845,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               SizedBox(height: screenHeight * 0.01),
               _buildCleanTextField(
                 controller: _groupNameController,
-                hint: 'Enter a name for your group',
+                hint: 'Enter a name for your room',
               ),
               SizedBox(height: screenHeight * 0.02),
 

@@ -1,3 +1,15 @@
+// =================================================================
+// FROZEN RAZORPAY SERVICE - DO NOT USE IN ACTIVE CODE
+// =================================================================
+// This file is preserved as a backup for reference and potential rollback.
+// To reactivate Razorpay:
+// 1. Uncomment `razorpay_flutter: ^1.3.7` in pubspec.yaml
+// 2. Run `flutter pub get`
+// 3. Update imports in consuming files
+// =================================================================
+
+// ignore_for_file: depend_on_referenced_packages, uri_does_not_exist, undefined_class, undefined_method, undefined_identifier
+
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:roomie/data/datasources/auth_service.dart';

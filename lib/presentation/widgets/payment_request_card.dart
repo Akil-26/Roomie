@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:roomie/data/models/message_model.dart';
-import 'package:roomie/data/datasources/razorpay_service.dart';
+import 'package:roomie/data/datasources/payments/razorpay_service.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 
 /// A widget that displays a payment request in chat
@@ -444,6 +443,7 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
   final RazorpayService _razorpayService = RazorpayService();
   final AuthService _authService = AuthService();
   bool _isProcessing = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -457,10 +457,13 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
     super.dispose();
   }
 
-  Future<void> _handleRazorpayPayment() async {
+  void _handleRazorpayPayment() {
     if (_isProcessing) return;
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+    });
 
     final currentUser = _authService.currentUser;
     if (currentUser == null) {
@@ -476,51 +479,33 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
       return;
     }
 
+    // Start Razorpay payment (opens UPI/Card/Wallet options)
     _razorpayService.startPayment(
       amount: widget.amount,
       recipientName: widget.senderName,
       recipientId: widget.senderId,
       note: widget.note,
       messageId: widget.paymentRequestId,
-      onComplete: (result) async {
+      onComplete: (result) {
         if (!mounted) return;
-
+        
         setState(() => _isProcessing = false);
-
+        
         if (result.success) {
-          // Save payment history
-          await _razorpayService.savePaymentHistory(
-            odId: currentUser.uid,
-            odName: currentUser.displayName ?? 'User',
-            recipientId: widget.senderId,
-            recipientName: widget.senderName,
-            amount: widget.amount,
-            paymentId: result.paymentId!,
-            orderId: result.orderId,
-            note: widget.note,
-            messageId: widget.paymentRequestId,
-          );
-
-          if (mounted) {
-            Navigator.pop(context, {
-              'status': 'paid',
-              'paymentId': result.paymentId,
-            });
-          }
+          Navigator.pop(context, {
+            'status': 'paid',
+            'paymentId': result.paymentId,
+            'gateway': 'razorpay',
+          });
+        } else if (result.errorCode == 'CANCELLED') {
+          // User cancelled - do nothing, stay on sheet
+          setState(() {
+            _errorMessage = null;
+          });
         } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  result.errorCode == 'CANCELLED'
-                      ? 'Payment cancelled'
-                      : 'Payment failed: ${result.errorMessage}',
-                ),
-                backgroundColor: Colors.red,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
+          setState(() {
+            _errorMessage = result.errorMessage ?? 'Payment failed';
+          });
         }
       },
     );
@@ -575,7 +560,34 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
 
             const SizedBox(height: 24),
 
-            // Razorpay Pay Now Button (Primary)
+            // Error message
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.red, fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            
+            if (_errorMessage != null) const SizedBox(height: 16),
+
+            // Razorpay Pay Now Button (UPI + Cards + Wallets)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SizedBox(
@@ -583,7 +595,7 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
                 child: ElevatedButton.icon(
                   onPressed: _isProcessing ? null : _handleRazorpayPayment,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF072654), // Razorpay blue
+                    backgroundColor: const Color(0xFF528FF0), // Razorpay blue
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -600,9 +612,9 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.payment, size: 24),
+                      : const Icon(Icons.account_balance_wallet, size: 24),
                   label: Text(
-                    _isProcessing ? 'Processing...' : 'Pay with Razorpay',
+                    _isProcessing ? 'Processing...' : 'Pay Now (UPI / Card)',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -633,60 +645,28 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
               ],
             ),
 
-            const SizedBox(height: 16),
-            const Divider(),
-
-            // UPI Direct Option (Alternative)
-            if (widget.upiId != null && widget.upiId!.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
+            // Test mode indicator
+            if (_razorpayService.isTestMode) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text(
-                  'Or pay directly via UPI',
-                  style: textTheme.labelLarge?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.7),
+                child: const Text(
+                  '🧪 TEST MODE - Use UPI: success@razorpay',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _UpiAppButton(
-                      name: 'GPay',
-                      icon: Icons.g_mobiledata,
-                      color: Colors.blue,
-                      onTap: () => _launchUpiApp(context, 'gpay'),
-                    ),
-                    _UpiAppButton(
-                      name: 'PhonePe',
-                      icon: Icons.phone_android,
-                      color: Colors.purple,
-                      onTap: () => _launchUpiApp(context, 'phonepe'),
-                    ),
-                    _UpiAppButton(
-                      name: 'Paytm',
-                      icon: Icons.account_balance_wallet,
-                      color: Colors.lightBlue,
-                      onTap: () => _launchUpiApp(context, 'paytm'),
-                    ),
-                    _UpiAppButton(
-                      name: 'Other',
-                      icon: Icons.more_horiz,
-                      color: Colors.grey,
-                      onTap: () => _launchUpiApp(context, 'upi'),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-              const Divider(),
             ],
+
+            const SizedBox(height: 16),
+            const Divider(),
 
             // Mark as paid button
             ListTile(
@@ -719,122 +699,6 @@ class _PaymentOptionsSheetState extends State<_PaymentOptionsSheet> {
             ),
 
             const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _launchUpiApp(BuildContext context, String app) async {
-    if (widget.upiId == null || widget.upiId!.isEmpty) return;
-
-    // Build UPI deep link
-    final upiUrl = Uri(
-      scheme: 'upi',
-      host: 'pay',
-      queryParameters: {
-        'pa': widget.upiId!, // Payee UPI ID
-        'pn': 'Roomie Payment', // Payee name
-        'am': widget.amount.toStringAsFixed(2), // Amount
-        'cu': 'INR', // Currency
-        'tn': widget.note, // Transaction note
-      },
-    );
-
-    try {
-      final launched = await launchUrl(
-        upiUrl,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (launched && context.mounted) {
-        // Show confirmation dialog after returning from UPI app
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder:
-              (context) => AlertDialog(
-                title: const Text('Payment Complete?'),
-                content: const Text(
-                  'Did you complete the payment successfully?',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('No'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Yes, Paid'),
-                  ),
-                ],
-              ),
-        );
-
-        if (confirmed == true && context.mounted) {
-          Navigator.pop(context, {'status': 'paid'});
-        }
-      } else if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open UPI app. Please use Razorpay instead.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error opening UPI app. Please use Razorpay instead.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
-}
-
-/// UPI App button widget
-class _UpiAppButton extends StatelessWidget {
-  final String name;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _UpiAppButton({
-    required this.name,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 28),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              name,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
           ],
         ),
       ),

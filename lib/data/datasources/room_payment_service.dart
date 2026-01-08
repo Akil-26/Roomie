@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:roomie/data/datasources/auth_service.dart';
 import 'package:roomie/data/datasources/notification_service.dart';
-import 'package:roomie/data/datasources/razorpay_service.dart';
+import 'package:roomie/data/datasources/payments/razorpay_service.dart';
 import 'package:roomie/data/models/payment_record_model.dart';
 import 'package:roomie/core/logger.dart';
 
@@ -117,9 +117,9 @@ class RoomPaymentService {
     }
   }
 
-  /// Complete payment flow with Razorpay
+  /// Complete payment flow with Stripe
   /// 1. Creates pending payment record
-  /// 2. Opens Razorpay checkout
+  /// 2. Creates Stripe payment
   /// 3. Updates payment status based on result
   /// 4. Sends notifications
   Future<PaymentRecordModel?> processPayment({
@@ -154,58 +154,60 @@ class RoomPaymentService {
       return null;
     }
 
-    // 2. Open Razorpay checkout
-    _razorpayService.startPayment(
-      amount: amount,
-      recipientName: ownerName,
-      recipientId: ownerId,
-      note: note ?? '${purpose.displayName} payment for $roomName',
-      onComplete: (result) async {
-        if (result.success && result.paymentId != null) {
-          // 3a. Payment successful
-          final updated = await markPaymentSuccess(
-            paymentId: paymentId,
-            razorpayPaymentId: result.paymentId!,
-            razorpayOrderId: result.orderId,
-          );
-
-          if (updated) {
-            // 4. Send notifications
-            await _sendPaymentSuccessNotifications(
-              roomId: roomId,
-              roomName: roomName,
-              ownerId: ownerId,
-              payerId: user.uid,
-              amount: amount,
-              currency: currency,
-              purpose: purpose,
+    try {
+      // 2. Start Razorpay payment (UPI + Cards + Wallets)
+      _razorpayService.startPayment(
+        amount: amount,
+        recipientName: ownerName,
+        recipientId: ownerId,
+        note: note ?? '${purpose.displayName} payment for $roomName',
+        messageId: paymentId,
+        onComplete: (result) async {
+          if (result.success && result.paymentId != null) {
+            // 3a. Payment successful
+            final updated = await markPaymentSuccess(
+              paymentId: paymentId,
+              razorpayPaymentId: result.paymentId!,
+              razorpayOrderId: result.orderId,
             );
-            
-            onComplete(true, 'Payment successful');
+
+            if (updated) {
+              // 4. Send notifications
+              await _sendPaymentSuccessNotifications(
+                roomId: roomId,
+                roomName: roomName,
+                ownerId: ownerId,
+                payerId: user.uid,
+                amount: amount,
+                currency: currency,
+                purpose: purpose,
+              );
+              
+              onComplete(true, 'Payment successful');
+            } else {
+              onComplete(false, 'Payment succeeded but failed to save record');
+            }
+          } else if (result.errorCode == 'CANCELLED') {
+            // User cancelled
+            onComplete(false, 'Payment cancelled');
           } else {
-            onComplete(false, 'Payment succeeded but failed to save record');
+            // 3b. Payment failed
+            await markPaymentFailed(
+              paymentId: paymentId,
+              errorMessage: result.errorMessage ?? 'Payment failed',
+            );
+            onComplete(false, result.errorMessage ?? 'Payment failed');
           }
-        } else {
-          // 3b. Payment failed
-          await markPaymentFailed(
-            paymentId: paymentId,
-            errorCode: result.errorCode,
-            errorMessage: result.errorMessage,
-          );
-
-          // 4. Send failure notification to payer
-          await _sendPaymentFailureNotification(
-            payerId: user.uid,
-            roomName: roomName,
-            amount: amount,
-            currency: currency,
-            errorMessage: result.errorMessage,
-          );
-
-          onComplete(false, result.errorMessage ?? 'Payment failed');
-        }
-      },
-    );
+        },
+      );
+    } catch (e) {
+      AppLogger.e('❌ Payment processing error: $e');
+      await markPaymentFailed(
+        paymentId: paymentId,
+        errorMessage: e.toString(),
+      );
+      onComplete(false, 'Payment error: $e');
+    }
 
     // Return null here since the actual result comes through callback
     return null;

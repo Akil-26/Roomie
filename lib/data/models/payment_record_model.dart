@@ -95,8 +95,9 @@ class PaymentRecordModel {
   final PaymentPurpose purpose;
   final PaymentStatus status;
   final DateTime createdAt;
-  final String? razorpayPaymentId;  // Razorpay transaction ID
-  final String? razorpayOrderId;    // Razorpay order ID
+  final String? razorpayPaymentId;  // Gateway transaction ID (legacy name for compatibility)
+  final String? razorpayOrderId;    // Gateway order ID (legacy name for compatibility)
+  final String? gateway;            // Payment gateway used: 'stripe', 'razorpay', etc.
   final String? note;               // Optional payment note
   final DateTime? completedAt;      // When payment was completed
 
@@ -112,9 +113,14 @@ class PaymentRecordModel {
     required this.createdAt,
     this.razorpayPaymentId,
     this.razorpayOrderId,
+    this.gateway,
     this.note,
     this.completedAt,
   });
+
+  // Getter for gateway-agnostic access
+  String? get gatewayPaymentId => razorpayPaymentId;
+  String? get gatewayOrderId => razorpayOrderId;
 
   /// Create from Firestore document
   factory PaymentRecordModel.fromFirestore(DocumentSnapshot doc) {
@@ -134,8 +140,9 @@ class PaymentRecordModel {
       purpose: PaymentPurpose.fromString(map['purpose']),
       status: PaymentStatus.fromString(map['status']),
       createdAt: _parseDateTime(map['createdAt']) ?? DateTime.now(),
-      razorpayPaymentId: map['razorpayPaymentId'],
-      razorpayOrderId: map['razorpayOrderId'],
+      razorpayPaymentId: map['razorpayPaymentId'] ?? map['gatewayPaymentId'],
+      razorpayOrderId: map['razorpayOrderId'] ?? map['gatewayOrderId'],
+      gateway: map['gateway'] ?? 'razorpay', // Default to razorpay for legacy records
       note: map['note'],
       completedAt: _parseDateTime(map['completedAt']),
     );
@@ -162,6 +169,7 @@ class PaymentRecordModel {
       'createdAt': Timestamp.fromDate(createdAt),
       'razorpayPaymentId': razorpayPaymentId,
       'razorpayOrderId': razorpayOrderId,
+      'gateway': gateway ?? 'stripe', // Default to stripe for new records
       'note': note,
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
     };
@@ -180,6 +188,7 @@ class PaymentRecordModel {
     DateTime? createdAt,
     String? razorpayPaymentId,
     String? razorpayOrderId,
+    String? gateway,
     String? note,
     DateTime? completedAt,
   }) {
@@ -195,6 +204,7 @@ class PaymentRecordModel {
       createdAt: createdAt ?? this.createdAt,
       razorpayPaymentId: razorpayPaymentId ?? this.razorpayPaymentId,
       razorpayOrderId: razorpayOrderId ?? this.razorpayOrderId,
+      gateway: gateway ?? this.gateway,
       note: note ?? this.note,
       completedAt: completedAt ?? this.completedAt,
     );
@@ -227,6 +237,6 @@ class PaymentRecordModel {
 
   @override
   String toString() {
-    return 'PaymentRecordModel(paymentId: $paymentId, roomId: $roomId, payerId: $payerId, amount: $formattedAmount, purpose: ${purpose.displayName}, status: ${status.displayName})';
+    return 'PaymentRecordModel(paymentId: $paymentId, roomId: $roomId, payerId: $payerId, amount: $formattedAmount, purpose: ${purpose.displayName}, status: ${status.displayName}, gateway: $gateway)';
   }
 }

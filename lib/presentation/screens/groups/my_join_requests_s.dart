@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:roomie/data/datasources/groups_service.dart';
 import 'package:roomie/data/models/room_join_request_model.dart';
 import 'package:intl/intl.dart';
+import 'package:roomie/presentation/widgets/empty_states.dart';
 
 /// Screen for students to view their join request statuses.
 /// 
@@ -122,43 +123,15 @@ class _MyJoinRequestsScreenState extends State<MyJoinRequestsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _requests.isEmpty
-              ? _buildEmptyState()
+              // STEP-5: Improved empty state
+              ? const EmptyJoinRequestsState(isOwnerView: false)
               : _buildRequestsList(),
     );
   }
 
+  // STEP-5: Keeping for backward compatibility but using EmptyJoinRequestsState
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.send_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No Join Requests',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'You haven\'t requested to join any rooms yet.\n'
-            'Browse available rooms to find one!',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
-          ),
-        ],
-      ),
-    );
+    return const EmptyJoinRequestsState(isOwnerView: false);
   }
 
   Widget _buildRequestsList() {

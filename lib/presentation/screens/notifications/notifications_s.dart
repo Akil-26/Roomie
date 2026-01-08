@@ -535,9 +535,9 @@ class _NotificationCardState extends State<NotificationCard> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Leave Current Group?'),
+            title: const Text('Leave Current Room?'),
             content: const Text(
-              'Are you sure you want to leave your current group and join this new one?',
+              'Are you sure you want to leave your current room and join this new one?',
             ),
             actions: [
               TextButton(
@@ -568,7 +568,7 @@ class _NotificationCardState extends State<NotificationCard> {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              'Successfully switched groups!',
+              'Successfully switched rooms!',
               style: TextStyle(color: colorScheme.onPrimary),
             ),
             backgroundColor: colorScheme.primary,
@@ -578,7 +578,7 @@ class _NotificationCardState extends State<NotificationCard> {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              'Failed to switch groups: $e',
+              'Failed to switch rooms: $e',
               style: TextStyle(color: colorScheme.onError),
             ),
             backgroundColor: colorScheme.error,
@@ -613,7 +613,7 @@ class _NotificationCardState extends State<NotificationCard> {
     if (groupId == null || groupId.isEmpty) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Group information is missing for this request.'),
+          content: Text('Room information is missing for this request.'),
         ),
       );
       return;
@@ -636,7 +636,7 @@ class _NotificationCardState extends State<NotificationCard> {
 
       if (group == null) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('The group could not be found.')),
+          const SnackBar(content: Text('The room could not be found.')),
         );
         return;
       }

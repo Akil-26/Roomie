@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:roomie/data/datasources/room_payment_service.dart';
-import 'package:roomie/data/datasources/razorpay_service.dart';
+import 'package:roomie/data/datasources/payments/razorpay_service.dart';
 import 'package:roomie/data/models/payment_record_model.dart';
+import 'package:roomie/presentation/widgets/empty_states.dart';
+import 'package:roomie/presentation/widgets/action_guard.dart';
 
 /// Screen for roommates to pay rent and view their own payment history.
 /// 
@@ -15,6 +17,11 @@ import 'package:roomie/data/models/payment_record_model.dart';
 /// - Roommates only see their OWN payments
 /// - Cannot see other roommates' payments
 /// - Cannot see owner financial settings
+/// 
+/// STEP-6: Safety Guards:
+/// - Double-payment protection
+/// - UI lock during payment processing
+/// - App resume re-checks
 class RoomPaymentsScreen extends StatefulWidget {
   final String roomId;
   final String roomName;
@@ -29,12 +36,12 @@ class RoomPaymentsScreen extends StatefulWidget {
   State<RoomPaymentsScreen> createState() => _RoomPaymentsScreenState();
 }
 
-class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> {
+class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> 
+    with WidgetsBindingObserver, ActionGuardMixin {
   final RoomPaymentService _paymentService = RoomPaymentService();
   final RazorpayService _razorpayService = RazorpayService();
   
   bool _isLoading = true;
-  bool _isProcessingPayment = false;
   bool _canMakePayment = false;
   Map<String, dynamic>? _ownerDetails;
   List<PaymentRecordModel> _myPayments = [];
@@ -42,13 +49,26 @@ class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> {
   @override
   void initState() {
     super.initState();
+    // STEP-6: Register for app lifecycle events
+    WidgetsBinding.instance.addObserver(this);
     _razorpayService.initialize();
     _loadData();
   }
 
+  // STEP-6: App Background/Resume Safety
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Re-load data when app resumes to get fresh payment state
+      _loadData();
+    }
+  }
+
   @override
   void dispose() {
-    _razorpayService.dispose();
+    // STEP-6: Cleanup lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    // Don't dispose razorpay here as it's a singleton
     super.dispose();
   }
 
@@ -277,33 +297,52 @@ class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> {
     required PaymentPurpose purpose,
     String? note,
   }) async {
-    if (_ownerDetails == null) return;
+    // STEP-6: Double-payment protection
+    // Defensive assertion: prevent payment if owner details missing
+    if (_ownerDetails == null || _ownerDetails!['ownerId'] == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot process payment: Owner details unavailable'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
 
-    setState(() => _isProcessingPayment = true);
+    // Use guarded action for double-tap prevention
+    await guardedAction<void>(
+      'pay_rent',
+      () async {
+        await _paymentService.processPayment(
+          roomId: widget.roomId,
+          roomName: widget.roomName,
+          ownerId: _ownerDetails!['ownerId'],
+          ownerName: _ownerDetails!['ownerName'] ?? 'Owner',
+          amount: amount,
+          currency: _ownerDetails!['rentCurrency'] ?? 'INR',
+          purpose: purpose,
+          note: note,
+          onComplete: (success, message) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(message ?? (success ? 'Payment successful' : 'Payment failed')),
+                  backgroundColor: success ? Colors.green : Colors.red,
+                ),
+              );
 
-    await _paymentService.processPayment(
-      roomId: widget.roomId,
-      roomName: widget.roomName,
-      ownerId: _ownerDetails!['ownerId'],
-      ownerName: _ownerDetails!['ownerName'] ?? 'Owner',
-      amount: amount,
-      currency: _ownerDetails!['rentCurrency'] ?? 'INR',
-      purpose: purpose,
-      note: note,
-      onComplete: (success, message) {
+              if (success) {
+                _loadData(); // Refresh payment history
+              }
+            }
+          },
+        );
+      },
+      onError: (e) {
         if (mounted) {
-          setState(() => _isProcessingPayment = false);
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message ?? (success ? 'Payment successful' : 'Payment failed')),
-              backgroundColor: success ? Colors.green : Colors.red,
-            ),
-          );
-
-          if (success) {
-            _loadData(); // Refresh payment history
-          }
+          showNetworkErrorSnackbar(context, message: 'Payment failed. Please check your connection.');
         }
       },
     );
@@ -328,9 +367,14 @@ class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> {
         title: const Text('Payments'),
         centerTitle: true,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _buildContent(),
+      // STEP-6: UI Lock during payment processing (soft visual blocker)
+      body: CriticalActionOverlay(
+        isActive: isActionInProgress('pay_rent'),
+        message: 'Processing payment...',
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _buildContent(),
+      ),
     );
   }
 
@@ -343,6 +387,14 @@ class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // STEP-5: Flow explanation text (tiny onboarding)
+            const FlowExplanationCard(
+              icon: Icons.info_outline,
+              text: 'Payments are handled by the room owner. You can only see your own payments.',
+              color: Colors.blue,
+            ),
+            const SizedBox(height: 16),
+            
             // Pay Rent section (only if room has owner)
             if (_canMakePayment && _ownerDetails != null)
               _buildPaymentCard()
@@ -435,18 +487,19 @@ class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> {
             
             const SizedBox(height: 16),
             
+            // STEP-6: Pay button with double-tap protection
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _isProcessingPayment ? null : _showPaymentDialog,
-                icon: _isProcessingPayment
+                onPressed: isActionInProgress('pay_rent') ? null : _showPaymentDialog,
+                icon: isActionInProgress('pay_rent')
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.credit_card),
-                label: Text(_isProcessingPayment ? 'Processing...' : 'Pay Now'),
+                label: Text(isActionInProgress('pay_rent') ? 'Processing...' : 'Pay Now'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
@@ -520,36 +573,12 @@ class _RoomPaymentsScreenState extends State<RoomPaymentsScreen> {
         ),
         const SizedBox(height: 12),
         
+        // STEP-5: Improved empty state for payments
         if (_myPayments.isEmpty)
-          _buildEmptyHistory()
+          const EmptyPaymentsState()
         else
           ..._myPayments.map((payment) => _buildPaymentHistoryItem(payment)),
       ],
-    );
-  }
-
-  Widget _buildEmptyHistory() {
-    return Container(
-      padding: const EdgeInsets.all(32),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: Column(
-          children: [
-            Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[400]),
-            const SizedBox(height: 12),
-            Text(
-              'No Payments Yet',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

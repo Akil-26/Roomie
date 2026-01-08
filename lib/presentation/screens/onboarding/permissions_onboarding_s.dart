@@ -136,7 +136,7 @@ class _PermissionsOnboardingScreenState extends State<PermissionsOnboardingScree
                       _PermissionCard(
                         icon: Icons.notifications_outlined,
                         title: 'Notifications',
-                        description: 'Stay updated with messages, expenses, and group activities',
+                        description: 'Stay updated with messages, expenses, and room activities',
                         isGranted: _notificationGranted,
                         colorScheme: cs,
                       ),
@@ -145,7 +145,7 @@ class _PermissionsOnboardingScreenState extends State<PermissionsOnboardingScree
                       _PermissionCard(
                         icon: Icons.location_on_outlined,
                         title: 'Location',
-                        description: 'Find roommates nearby and share your location with your group',
+                        description: 'Find rooms nearby and share your location with your roommates',
                         isGranted: _locationGranted,
                         colorScheme: cs,
                       ),

@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:roomie/data/datasources/groups_service.dart';
+import 'package:roomie/presentation/widgets/action_guard.dart';
 
+/// Screen for owners to view and manage join requests to their group.
+/// 
+/// STEP-6: Safety Guards:
+/// - Double-action protection for approve/reject buttons
+/// - App resume safety to refresh request list
+/// - Defensive assertions for request status
 class JoinRequestsScreen extends StatefulWidget {
   final Map<String, dynamic> group;
 
@@ -10,8 +17,32 @@ class JoinRequestsScreen extends StatefulWidget {
   State<JoinRequestsScreen> createState() => _JoinRequestsScreenState();
 }
 
-class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
+class _JoinRequestsScreenState extends State<JoinRequestsScreen> 
+    with WidgetsBindingObserver, ActionGuardMixin {
   final GroupsService _groupsService = GroupsService();
+
+  @override
+  void initState() {
+    super.initState();
+    // STEP-6: Register for app lifecycle events
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  // STEP-6: App Background/Resume Safety
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Force rebuild to refresh stream data
+      setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    // STEP-6: Cleanup lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -235,12 +266,14 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
 
             SizedBox(height: screenHeight * 0.025),  // 2.5% gap
 
-            // Action Buttons
+            // STEP-6: Action Buttons with double-tap protection
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => _rejectRequest(request),
+                    onPressed: isActionInProgress('reject_${request['id']}')
+                        ? null
+                        : () => _rejectRequest(request),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: colorScheme.error,
                       side: BorderSide(color: colorScheme.error),
@@ -249,7 +282,16 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: Text(
+                    child: isActionInProgress('reject_${request['id']}')
+                        ? SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colorScheme.error,
+                            ),
+                          )
+                        : Text(
                       'Reject',
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
@@ -261,7 +303,9 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                 SizedBox(width: screenWidth * 0.03),  // 3% gap
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => _approveRequest(request),
+                    onPressed: isActionInProgress('approve_${request['id']}')
+                        ? null
+                        : () => _approveRequest(request),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: colorScheme.primary,
                       foregroundColor: colorScheme.onPrimary,
@@ -271,7 +315,16 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                       ),
                       elevation: 0,
                     ),
-                    child: Text(
+                    child: isActionInProgress('approve_${request['id']}')
+                        ? SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colorScheme.onPrimary,
+                            ),
+                          )
+                        : Text(
                       'Approve',
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
@@ -318,86 +371,86 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
   }
 
   Future<void> _approveRequest(Map<String, dynamic> request) async {
-    try {
-      final success = await _groupsService.approveJoinRequest(
-        request['id'],
-        request['groupId'],
-        request['userId'],
-      );
+    // STEP-6: Double-action protection with guardedAction
+    await guardedAction<void>(
+      'approve_${request['id']}',
+      () async {
+        final success = await _groupsService.approveJoinRequest(
+          request['id'],
+          request['groupId'],
+          request['userId'],
+        );
 
-      if (success && mounted) {
-        final colorScheme = Theme.of(context).colorScheme;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '${request['userName']} has been added to the group!',
+        if (success && mounted) {
+          final colorScheme = Theme.of(context).colorScheme;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${request['userName']} has been added to the group!',
+              ),
+              backgroundColor: colorScheme.secondary,
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: colorScheme.onSecondary,
+                onPressed: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                },
+              ),
+              behavior: SnackBarBehavior.floating,
             ),
-            backgroundColor: colorScheme.secondary,
-            action: SnackBarAction(
-              label: 'OK',
-              textColor: colorScheme.onSecondary,
-              onPressed: () {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              },
+          );
+          if (mounted) Navigator.of(context).pop(); // Pop after success
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to approve request. Please try again.'),
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        if (mounted) Navigator.of(context).pop(); // Pop after success
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to approve request. Please try again.'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
+          );
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          showNetworkErrorSnackbar(context, message: 'Failed to approve. Check your connection.');
+        }
+      },
+    );
   }
 
   Future<void> _rejectRequest(Map<String, dynamic> request) async {
-    try {
-      final success = await _groupsService.rejectJoinRequest(
-        request['id'],
-        request['groupId'], // Pass groupId
-      );
+    // STEP-6: Double-action protection with guardedAction
+    await guardedAction<void>(
+      'reject_${request['id']}',
+      () async {
+        final success = await _groupsService.rejectJoinRequest(
+          request['id'],
+          request['groupId'], // Pass groupId
+        );
 
-      if (success && mounted) {
-        final colorScheme = Theme.of(context).colorScheme;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Request from ${request['userName']} was rejected.'),
-            backgroundColor: colorScheme.error,
-          ),
-        );
-        if (mounted) Navigator.of(context).pop(); // Pop after success
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to reject request. Please try again.'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
+        if (success && mounted) {
+          final colorScheme = Theme.of(context).colorScheme;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Request from ${request['userName']} was rejected.'),
+              backgroundColor: colorScheme.error,
+            ),
+          );
+          if (mounted) Navigator.of(context).pop(); // Pop after success
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to reject request. Please try again.'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          showNetworkErrorSnackbar(context, message: 'Failed to reject. Check your connection.');
+        }
+      },
+    );
   }
 
   String _formatTimeAgo(dynamic timestamp) {

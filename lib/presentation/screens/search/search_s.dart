@@ -856,7 +856,7 @@ class _GroupTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final name = group['name']?.toString() ?? 'Group';
+    final name = group['name']?.toString() ?? 'Room';
     final location = group['location']?.toString() ?? '';
     final roomType = group['roomType']?.toString();
     final rent =

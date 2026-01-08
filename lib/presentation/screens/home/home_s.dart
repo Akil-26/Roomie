@@ -303,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Successfully left the group',
+              'Successfully left the room',
               style: TextStyle(color: colorScheme.onPrimary),
             ),
             backgroundColor: colorScheme.primary,
@@ -316,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Error leaving group: $e',
+              'Error leaving room: $e',
               style: TextStyle(color: colorScheme.onError),
             ),
             backgroundColor: colorScheme.error,
@@ -336,7 +336,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context: context,
         builder:
             (context) => AlertDialog(
-              title: const Text('Leave Group'),
+              title: const Text('Leave Room'),
               content: Text(
                 'Are you sure you want to leave ${_currentUserGroup!['name']}?',
               ),
@@ -367,7 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Successfully left the group',
+                'Successfully left the room',
                 style: TextStyle(color: colorScheme.onPrimary),
               ),
               backgroundColor: colorScheme.primary,
@@ -381,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Error leaving group: $e',
+              'Error leaving room: $e',
               style: TextStyle(color: colorScheme.onError),
             ),
             backgroundColor: colorScheme.error,
@@ -904,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'No groups available',
+                'No rooms available',
                 style:
                     textTheme.titleMedium?.copyWith(
                       color: colorScheme.onSurface,
@@ -919,8 +919,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 4),
               Text(
                 _canUserCreateGroup
-                    ? 'Create your first group to get started'
-                    : 'You are already in a group.',
+                    ? 'Create your first room to get started'
+                    : 'You are already in a room.',
                 style:
                     textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
@@ -1412,7 +1412,7 @@ class GroupDetailsScreen extends StatelessWidget {
           icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
         ),
         title: Text(
-          group['name'] ?? 'Group Details',
+          group['name'] ?? 'Room Details',
           style:
               textTheme.titleMedium?.copyWith(
                 color: colorScheme.onSurface,
@@ -1457,7 +1457,7 @@ class GroupDetailsScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    group['name'] ?? 'Group Name',
+                    group['name'] ?? 'Room Name',
                     style:
                         textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.bold,

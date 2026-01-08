@@ -162,7 +162,7 @@ class _MessagesPageState extends State<MessagesPage> {
                   children: [
                     _buildFilterTab('all', 'All', screenHeight, screenWidth),
                     SizedBox(width: screenWidth * 0.025),
-                    _buildFilterTab('groups', 'Groups', screenHeight, screenWidth),
+                    _buildFilterTab('groups', 'Rooms', screenHeight, screenWidth),
                     SizedBox(width: screenWidth * 0.025),
                     _buildFilterTab('individual', 'Direct', screenHeight, screenWidth),
                   ],

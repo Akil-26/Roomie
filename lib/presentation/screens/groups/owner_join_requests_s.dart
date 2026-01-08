@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:roomie/data/datasources/groups_service.dart';
 import 'package:roomie/data/models/room_join_request_model.dart';
 import 'package:intl/intl.dart';
+import 'package:roomie/presentation/widgets/empty_states.dart';
+import 'package:roomie/presentation/widgets/action_guard.dart';
 
 /// Screen for room owner to view and manage join requests.
 /// 
@@ -11,6 +13,11 @@ import 'package:intl/intl.dart';
 /// - Actions: ✅ Approve, ❌ Reject
 /// - No voting, no roommate involvement
 /// - OWNER ONLY can approve/reject
+/// 
+/// STEP-6: Safety Guards:
+/// - Double-action protection on Approve/Reject
+/// - App resume re-checks
+/// - UI lock during processing
 class OwnerJoinRequestsScreen extends StatefulWidget {
   final String roomId;
   final String roomName;
@@ -25,7 +32,8 @@ class OwnerJoinRequestsScreen extends StatefulWidget {
   State<OwnerJoinRequestsScreen> createState() => _OwnerJoinRequestsScreenState();
 }
 
-class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
+class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> 
+    with WidgetsBindingObserver, ActionGuardMixin {
   final GroupsService _groupsService = GroupsService();
   bool _isLoading = false;
   List<RoomJoinRequestModel> _requests = [];
@@ -34,7 +42,25 @@ class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
   @override
   void initState() {
     super.initState();
+    // STEP-6: Register for app lifecycle events
+    WidgetsBinding.instance.addObserver(this);
     _loadRequests();
+  }
+
+  // STEP-6: App Background/Resume Safety
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Re-load requests when app resumes to get fresh state
+      _loadRequests();
+    }
+  }
+
+  @override
+  void dispose() {
+    // STEP-6: Cleanup lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _loadRequests() async {
@@ -69,6 +95,13 @@ class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
   }
 
   Future<void> _approveRequest(RoomJoinRequestModel request) async {
+    // STEP-6: Double-action protection
+    final actionKey = 'approve_${request.requestId}';
+    if (isActionInProgress(actionKey)) {
+      debugPrint('[ActionGuard] Blocked duplicate approve action');
+      return;
+    }
+
     final userName = _getUserName(request.userId);
     final confirm = await showDialog<bool>(
       context: context,
@@ -95,34 +128,57 @@ class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
       ),
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
 
-    setState(() => _isLoading = true);
-
-    final success = await _groupsService.approveOwnerJoinRequest(request.requestId);
-
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$userName is now a member of "${widget.roomName}"'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadRequests(); // Refresh the list
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to approve join request'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        setState(() => _isLoading = false);
-      }
+    // STEP-6: Defensive assertion - request must still be pending
+    if (!assertCondition(
+      request.status == JoinRequestStatus.pending,
+      context,
+      failureMessage: 'This request has already been processed',
+    )) {
+      _loadRequests(); // Refresh to show current state
+      return;
     }
+
+    await guardedAction<void>(
+      actionKey,
+      () async {
+        final success = await _groupsService.approveOwnerJoinRequest(request.requestId);
+        
+        if (!success) {
+          throw Exception('Failed to approve join request');
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$userName is now a member of "${widget.roomName}"'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      },
+      onError: (e) {
+        // STEP-6: Network failure guard
+        if (mounted) {
+          showNetworkErrorSnackbar(context, message: 'Failed to approve join request');
+        }
+      },
+      onFinally: () {
+        // Always refresh to get latest state
+        _loadRequests();
+      },
+    );
   }
 
   Future<void> _rejectRequest(RoomJoinRequestModel request) async {
+    // STEP-6: Double-action protection
+    final actionKey = 'reject_${request.requestId}';
+    if (isActionInProgress(actionKey)) {
+      debugPrint('[ActionGuard] Blocked duplicate reject action');
+      return;
+    }
+
     final userName = _getUserName(request.userId);
     final confirm = await showDialog<bool>(
       context: context,
@@ -149,31 +205,47 @@ class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
       ),
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
 
-    setState(() => _isLoading = true);
-
-    final success = await _groupsService.rejectOwnerJoinRequest(request.requestId);
-
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Join request rejected'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        _loadRequests();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to reject join request'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        setState(() => _isLoading = false);
-      }
+    // STEP-6: Defensive assertion - request must still be pending
+    if (!assertCondition(
+      request.status == JoinRequestStatus.pending,
+      context,
+      failureMessage: 'This request has already been processed',
+    )) {
+      _loadRequests(); // Refresh to show current state
+      return;
     }
+
+    await guardedAction<void>(
+      actionKey,
+      () async {
+        final success = await _groupsService.rejectOwnerJoinRequest(request.requestId);
+        
+        if (!success) {
+          throw Exception('Failed to reject join request');
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Join request rejected'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      },
+      onError: (e) {
+        // STEP-6: Network failure guard
+        if (mounted) {
+          showNetworkErrorSnackbar(context, message: 'Failed to reject join request');
+        }
+      },
+      onFinally: () {
+        // Always refresh to get latest state
+        _loadRequests();
+      },
+    );
   }
 
   String _getUserName(String userId) {
@@ -207,42 +279,15 @@ class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _requests.isEmpty
-              ? _buildEmptyState()
+              // STEP-5: Improved empty state for owner view
+              ? const EmptyJoinRequestsState(isOwnerView: true)
               : _buildRequestsList(),
     );
   }
 
+  // STEP-5: Keeping for backward compatibility
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.person_add_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No Pending Requests',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'No one has requested to join\n"${widget.roomName}" yet',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
-          ),
-        ],
-      ),
-    );
+    return const EmptyJoinRequestsState(isOwnerView: true);
   }
 
   Widget _buildRequestsList() {
@@ -359,13 +404,23 @@ class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
 
             const SizedBox(height: 16),
 
-            // Action buttons
+            // Action buttons - STEP-6: Disable when action in progress
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => _rejectRequest(request),
-                    icon: const Icon(Icons.close, size: 18),
+                    // STEP-6: Double-action protection - disable if any action on this request is processing
+                    onPressed: (isActionInProgress('approve_${request.requestId}') || 
+                                isActionInProgress('reject_${request.requestId}'))
+                        ? null
+                        : () => _rejectRequest(request),
+                    icon: isActionInProgress('reject_${request.requestId}')
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.close, size: 18),
                     label: const Text('Reject'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
@@ -376,8 +431,21 @@ class _OwnerJoinRequestsScreenState extends State<OwnerJoinRequestsScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _approveRequest(request),
-                    icon: const Icon(Icons.check, size: 18),
+                    // STEP-6: Double-action protection - disable if any action on this request is processing
+                    onPressed: (isActionInProgress('approve_${request.requestId}') || 
+                                isActionInProgress('reject_${request.requestId}'))
+                        ? null
+                        : () => _approveRequest(request),
+                    icon: isActionInProgress('approve_${request.requestId}')
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Icon(Icons.check, size: 18),
                     label: const Text('Approve'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
